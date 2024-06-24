@@ -41,6 +41,8 @@ func main() {
 	ClientID := flag.String("client", "", "CheckmarxOne Client ID (if not using API Key)")
 	ClientSecret := flag.String("secret", "", "CheckmarxOne Client Secret (if not using API Key)")
 
+	ProjectName := flag.String("project", "", "Optional name of a project in CheckmarxOne")
+
 	HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
 
 	flag.Parse()
@@ -78,12 +80,29 @@ func main() {
 	}
 
 	logger.Infof("Connected with %v", cx1client.String())
+
+	if *ProjectName != "" {
+		proj, err := cx1client.GetProjectByName(*ProjectName)
+		if err != nil {
+			logger.Fatalf("Failed to get project named %v: %s", *ProjectName, err)
+		}
+		testProject = &proj
+	}
+
 	InitializeQueryMigration(cx1client)
 	defer deleteAuditSession(cx1client, logger)
 
 	qc, err := cx1client.GetQueries()
 	if err != nil {
 		logger.Fatalf("Error getting the query collection: %s", err)
+	}
+
+	if *ProjectName != "" {
+		aq, err := cx1client.GetQueriesByLevelID(Cx1ClientGo.AUDIT_QUERY_PROJECT, testProject.ProjectID)
+		if err != nil {
+			logger.Fatalf("Failed to get queries for project %v: %s", testProject.String(), err)
+		}
+		qc.AddQueries(&aq)
 	}
 
 	cqc := qc.GetCustomQueryCollection()
