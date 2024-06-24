@@ -37,6 +37,8 @@ func main() {
 	ProjectID := flag.Uint64("projectId", 0, "Checkmarx SAST Project ID (optional)")
 	ProjectName := flag.String("projectName", "", "Checkmarx SAST Project Name (optional)")
 
+	NoCorp := flag.Bool("nocorp", false, "Don't show Corporate-query dependencies (use if all corp queries were already migrated)")
+
 	HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
 
 	flag.Parse()
@@ -129,7 +131,7 @@ func main() {
 						team := teamsById[group.OwningTeamID]
 						teamQueries = append(teamQueries, query.QueryID)
 						logger.Infof("Adding team %v query %v to list", team.String(), query.StringDetailed())
-					} else if group.PackageType == CxSASTClientGo.CORP_QUERY { // add all corp queries
+					} else if group.PackageType == CxSASTClientGo.CORP_QUERY && !*NoCorp { // add all corp queries
 						corpQueries = append(corpQueries, query.QueryID)
 						logger.Infof("Adding corp query %v to list", query.StringDetailed())
 					}
@@ -147,7 +149,9 @@ func main() {
 				deps := []string{}
 				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
-					deps = append(deps, qq.StringDetailed())
+					if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
+						deps = append(deps, qq.StringDetailed())
+					}
 				}
 				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
 			}
