@@ -122,10 +122,10 @@ func main() {
 		for _, lang := range qc.QueryLanguages {
 			for _, group := range lang.QueryGroups {
 				for _, query := range group.Queries {
-					if group.OwningProjectID == targetProject.ProjectID { // add all project queries for sure
+					if group.OwningProjectID == targetProject.ProjectID && !slices.Contains(projectQueries, query.QueryID) { // add all project queries for sure
 						logger.Infof("Adding project %v query %v to list", targetProject.String(), query.StringDetailed())
 						projectQueries = append(projectQueries, query.QueryID)
-					} else if group.PackageType == CxSASTClientGo.TEAM_QUERY && slices.Contains(teamHierarchy, group.OwningTeamID) { // add all team-level queries in the hierarchy
+					} else if group.PackageType == CxSASTClientGo.TEAM_QUERY && slices.Contains(teamHierarchy, group.OwningTeamID) && !slices.Contains(teamQueries, query.QueryID) { // add all team-level queries in the hierarchy
 						team := teamsById[group.OwningTeamID]
 						teamQueries = append(teamQueries, query.QueryID)
 						logger.Infof("Adding team %v query %v to list", team.String(), query.StringDetailed())
@@ -142,16 +142,43 @@ func main() {
 		for _, qid := range projectQueries {
 			list := qc.OverrideList(qid)
 			logger.Infof("Project query:\n\t%v", strings.Join(list, "\n\t"))
+			query := qc.GetQueryByID(qid)
+			if len(query.Dependencies) > 0 {
+				deps := []string{}
+				for _, dep := range query.Dependencies {
+					qq := qc.GetQueryByID(dep)
+					deps = append(deps, qq.StringDetailed())
+				}
+				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+			}
 		}
 
 		for _, qid := range teamQueries {
 			list := qc.OverrideList(qid)
 			logger.Infof("Team query:\n\t%v", strings.Join(list, "\n\t"))
+			query := qc.GetQueryByID(qid)
+			if len(query.Dependencies) > 0 {
+				deps := []string{}
+				for _, dep := range query.Dependencies {
+					qq := qc.GetQueryByID(dep)
+					deps = append(deps, qq.StringDetailed())
+				}
+				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+			}
 		}
 
 		for _, qid := range corpQueries {
 			list := qc.OverrideList(qid)
 			logger.Infof("Corp query:\n\t%v", strings.Join(list, "\n\t"))
+			query := qc.GetQueryByID(qid)
+			if len(query.Dependencies) > 0 {
+				deps := []string{}
+				for _, dep := range query.Dependencies {
+					qq := qc.GetQueryByID(dep)
+					deps = append(deps, qq.StringDetailed())
+				}
+				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+			}
 		}
 
 	} else {
