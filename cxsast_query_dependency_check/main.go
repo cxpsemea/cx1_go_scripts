@@ -143,9 +143,9 @@ func main() {
 			list := qc.OverrideList(qid)
 			logger.Infof("Project query:\n\t%v", strings.Join(list, "\n\t"))
 			query := qc.GetQueryByID(qid)
-			if len(query.Dependencies) > 0 {
+			if len(query.CustomDependencies) > 0 {
 				deps := []string{}
-				for _, dep := range query.Dependencies {
+				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
 					deps = append(deps, qq.StringDetailed())
 				}
@@ -157,9 +157,9 @@ func main() {
 			list := qc.OverrideList(qid)
 			logger.Infof("Team query:\n\t%v", strings.Join(list, "\n\t"))
 			query := qc.GetQueryByID(qid)
-			if len(query.Dependencies) > 0 {
+			if len(query.CustomDependencies) > 0 {
 				deps := []string{}
-				for _, dep := range query.Dependencies {
+				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
 					deps = append(deps, qq.StringDetailed())
 				}
@@ -171,9 +171,9 @@ func main() {
 			list := qc.OverrideList(qid)
 			logger.Infof("Corp query:\n\t%v", strings.Join(list, "\n\t"))
 			query := qc.GetQueryByID(qid)
-			if len(query.Dependencies) > 0 {
+			if len(query.CustomDependencies) > 0 {
 				deps := []string{}
-				for _, dep := range query.Dependencies {
+				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
 					deps = append(deps, qq.StringDetailed())
 				}
