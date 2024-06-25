@@ -154,7 +154,9 @@ func main() {
 						deps = append(deps, qq.StringDetailed())
 					}
 				}
-				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				if len(deps) > 0 {
+					logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				}
 			}
 
 			if len(query.Dependencies) > 0 && !*NoProd {
@@ -179,7 +181,9 @@ func main() {
 						deps = append(deps, qq.StringDetailed())
 					}
 				}
-				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				if len(deps) > 0 {
+					logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				}
 			}
 
 			if len(query.Dependencies) > 0 && !*NoProd {
@@ -205,7 +209,9 @@ func main() {
 							deps = append(deps, qq.StringDetailed())
 						}
 					}
-					logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+					if len(deps) > 0 {
+						logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+					}
 				}
 
 				if len(query.Dependencies) > 0 && !*NoProd {
@@ -232,7 +238,9 @@ func main() {
 										deps = append(deps, qq.StringDetailed())
 									}
 								}
-								logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+								if len(deps) > 0 {
+									logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+								}
 							}
 
 							if len(query.Dependencies) > 0 && !*NoProd {
@@ -241,7 +249,9 @@ func main() {
 									qq := qc.GetQueryByID(dep)
 									deps = append(deps, qq.StringDetailed())
 								}
-								logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+								if len(deps) > 0 {
+									logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+								}
 							}
 						}
 					}
