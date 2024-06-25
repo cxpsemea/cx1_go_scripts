@@ -38,6 +38,7 @@ func main() {
 	ProjectName := flag.String("projectName", "", "Checkmarx SAST Project Name (optional)")
 
 	NoCorp := flag.Bool("nocorp", false, "Don't show Corporate-query dependencies (use if all corp queries were already migrated)")
+	NoProd := flag.Bool("noprod", false, "Don't show Product-default query dependencies (use if CxSAST and Cx1 versions match)")
 
 	HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
 
@@ -155,6 +156,15 @@ func main() {
 				}
 				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
 			}
+
+			if len(query.Dependencies) > 0 && !*NoProd {
+				deps := []string{}
+				for _, dep := range query.Dependencies {
+					qq := qc.GetQueryByID(dep)
+					deps = append(deps, qq.StringDetailed())
+				}
+				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+			}
 		}
 
 		for _, qid := range teamQueries {
@@ -165,19 +175,16 @@ func main() {
 				deps := []string{}
 				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
-					deps = append(deps, qq.StringDetailed())
+					if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
+						deps = append(deps, qq.StringDetailed())
+					}
 				}
 				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
 			}
-		}
 
-		for _, qid := range corpQueries {
-			list := qc.OverrideList(qid)
-			logger.Infof("Corp query:\n\t%v", strings.Join(list, "\n\t"))
-			query := qc.GetQueryByID(qid)
-			if len(query.CustomDependencies) > 0 {
+			if len(query.Dependencies) > 0 && !*NoProd {
 				deps := []string{}
-				for _, dep := range query.CustomDependencies {
+				for _, dep := range query.Dependencies {
 					qq := qc.GetQueryByID(dep)
 					deps = append(deps, qq.StringDetailed())
 				}
@@ -185,14 +192,57 @@ func main() {
 			}
 		}
 
+		if !*NoCorp {
+			for _, qid := range corpQueries {
+				list := qc.OverrideList(qid)
+				logger.Infof("Corp query:\n\t%v", strings.Join(list, "\n\t"))
+				query := qc.GetQueryByID(qid)
+				if len(query.CustomDependencies) > 0 {
+					deps := []string{}
+					for _, dep := range query.CustomDependencies {
+						qq := qc.GetQueryByID(dep)
+						if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
+							deps = append(deps, qq.StringDetailed())
+						}
+					}
+					logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				}
+
+				if len(query.Dependencies) > 0 && !*NoProd {
+					deps := []string{}
+					for _, dep := range query.Dependencies {
+						qq := qc.GetQueryByID(dep)
+						deps = append(deps, qq.StringDetailed())
+					}
+					logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+				}
+			}
+		}
 	} else {
 		for _, lang := range qc.QueryLanguages {
 			for _, group := range lang.QueryGroups {
-				for _, query := range group.Queries {
-					if query.IsValid && query.IsCustom() {
-						refs := qc.GetQueryDependencies(&query)
-						if len(refs) > 0 {
-							logger.Infof("%v\n\t%v\n", query.StringDetailed(), strings.Join(refs, "\n\t"))
+				if (group.PackageType == CxSASTClientGo.CORP_QUERY && !*NoCorp) || (group.PackageType == CxSASTClientGo.TEAM_QUERY || group.PackageType == CxSASTClientGo.PROJECT_QUERY) {
+					for _, query := range group.Queries {
+						if query.IsValid && query.IsCustom() {
+							if len(query.CustomDependencies) > 0 {
+								deps := []string{}
+								for _, dep := range query.CustomDependencies {
+									qq := qc.GetQueryByID(dep)
+									if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
+										deps = append(deps, qq.StringDetailed())
+									}
+								}
+								logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+							}
+
+							if len(query.Dependencies) > 0 && !*NoProd {
+								deps := []string{}
+								for _, dep := range query.Dependencies {
+									qq := qc.GetQueryByID(dep)
+									deps = append(deps, qq.StringDetailed())
+								}
+								logger.Infof("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
+							}
 						}
 					}
 				}
