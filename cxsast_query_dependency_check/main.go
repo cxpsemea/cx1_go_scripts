@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"slices"
@@ -151,7 +152,11 @@ func main() {
 				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
 					if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
-						deps = append(deps, qq.StringDetailed())
+						prefix := "NEW"
+						if qq.BaseQueryID != qq.QueryID {
+							prefix = "Override"
+						}
+						deps = append(deps, fmt.Sprintf("%v: %v", prefix, qq.StringDetailed()))
 					}
 				}
 				if len(deps) > 0 {
@@ -163,7 +168,11 @@ func main() {
 				deps := []string{}
 				for _, dep := range query.Dependencies {
 					qq := qc.GetQueryByID(dep)
-					deps = append(deps, qq.StringDetailed())
+					prefix := "NEW"
+					if qq.BaseQueryID != qq.QueryID {
+						prefix = "Override"
+					}
+					deps = append(deps, fmt.Sprintf("%v: %v", prefix, qq.StringDetailed()))
 				}
 				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
 			}
@@ -178,7 +187,11 @@ func main() {
 				for _, dep := range query.CustomDependencies {
 					qq := qc.GetQueryByID(dep)
 					if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
-						deps = append(deps, qq.StringDetailed())
+						prefix := "NEW"
+						if qq.BaseQueryID != qq.QueryID {
+							prefix = "Override"
+						}
+						deps = append(deps, fmt.Sprintf("%v: %v", prefix, qq.StringDetailed()))
 					}
 				}
 				if len(deps) > 0 {
@@ -190,7 +203,11 @@ func main() {
 				deps := []string{}
 				for _, dep := range query.Dependencies {
 					qq := qc.GetQueryByID(dep)
-					deps = append(deps, qq.StringDetailed())
+					prefix := "NEW"
+					if qq.BaseQueryID != qq.QueryID {
+						prefix = "Override"
+					}
+					deps = append(deps, fmt.Sprintf("%v: %v", prefix, qq.StringDetailed()))
 				}
 				logger.Warningf("%v depends on:\n\t- %v", query.StringDetailed(), strings.Join(deps, "\n\t- "))
 			}
@@ -206,7 +223,11 @@ func main() {
 					for _, dep := range query.CustomDependencies {
 						qq := qc.GetQueryByID(dep)
 						if qq.OwningGroup.PackageType != CxSASTClientGo.CORP_QUERY || !*NoCorp {
-							deps = append(deps, qq.StringDetailed())
+							prefix := "NEW"
+							if qq.BaseQueryID != qq.QueryID {
+								prefix = "Override"
+							}
+							deps = append(deps, fmt.Sprintf("%v: %v", prefix, qq.StringDetailed()))
 						}
 					}
 					if len(deps) > 0 {
