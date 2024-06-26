@@ -29,6 +29,8 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 	teamQueriesToMigrate := make(map[uint64][]uint64)
 	projectQueriesToMigrate := make(map[uint64][]uint64)*/
 
+	uniqueQIDs := []uint64{}
+
 	for lid := range qc.QueryLanguages {
 		for gid := range qc.QueryLanguages[lid].QueryGroups {
 			logger.Tracef("Processing query group %v", qc.QueryLanguages[lid].QueryGroups[gid].String())
@@ -36,6 +38,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 			case CxSASTClientGo.CORP_QUERY:
 				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
 					queriesList.AppendCorp(&query, qc)
+					uniqueQIDs = append(uniqueQIDs, query.QueryID)
 					//queriesList.CorpQueriesToMigrate = appendQueryToList(&query, qc, corpQueriesToMigrate)
 
 				}
@@ -62,6 +65,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 							logger.Errorf("Unable to migrate query %v: failed to make merged query: %s", query.StringDetailed(), err)
 						} else {
 							queriesList.AppendTeam(&newMergedQuery, teamId, qc)
+							uniqueQIDs = append(uniqueQIDs, query.QueryID)
 						}
 					}
 				}
@@ -74,6 +78,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 						}
 						projectId := qc.QueryLanguages[lid].QueryGroups[gid].OwningProjectID
 						queriesList.AppendProject(&query, projectId, qc)
+						uniqueQIDs = append(uniqueQIDs, query.QueryID)
 					}
 				}
 			}
@@ -132,6 +137,8 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 			}
 		}
 	}
+
+	logger.Infof("Processed %d queries", len(uniqueQIDs))
 
 	return queriesList
 }

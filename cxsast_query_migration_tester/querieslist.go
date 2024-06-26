@@ -24,11 +24,11 @@ func NewQueriesList() QueriesList {
 
 func (ql *QueriesList) AppendCorp(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection) {
 	logger.Infof("Appending corp query to migrate: %v", query.StringDetailed())
-	ql.CorpQueriesToMigrate = appendQueryToList(query, qc, ql.CorpQueriesToMigrate)
+	ql.CorpQueriesToMigrate = ql.appendQueryToList(query, qc, ql.CorpQueriesToMigrate)
 }
 func (ql *QueriesList) AppendNewCorp(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection) {
 	logger.Infof("Appending corp-base query to create: %v", query.StringDetailed())
-	ql.CorpQueriesToCreate = appendQueryToList(query, qc, ql.CorpQueriesToCreate)
+	ql.CorpQueriesToCreate = ql.appendQueryToList(query, qc, ql.CorpQueriesToCreate)
 }
 func (ql *QueriesList) AppendTeam(query *CxSASTClientGo.Query, teamId uint64, qc *CxSASTClientGo.QueryCollection) {
 	logger.Infof("Appending team %d override query to migrate: %v", teamId, query.StringDetailed())
@@ -37,9 +37,13 @@ func (ql *QueriesList) AppendTeam(query *CxSASTClientGo.Query, teamId uint64, qc
 		ql.TeamQueriesToMigrate[teamId] = make([]*CxSASTClientGo.Query, 0)
 	}
 	list := ql.TeamQueriesToMigrate[teamId]
-	newList := appendQueryToList(query, qc, &list)
+	newList := ql.appendQueryToList(query, qc, &list)
 	if &list != newList {
 		ql.TeamQueriesToMigrate[teamId] = *newList
+	}
+
+	if query.BaseQueryID == query.QueryID {
+		ql.AppendNewCorp(query, qc)
 	}
 }
 func (ql *QueriesList) InsertTeam(query *CxSASTClientGo.Query, teamId uint64, qc *CxSASTClientGo.QueryCollection) {
@@ -53,6 +57,10 @@ func (ql *QueriesList) InsertTeam(query *CxSASTClientGo.Query, teamId uint64, qc
 	if &list != newList {
 		ql.TeamQueriesToMigrate[teamId] = *newList
 	}
+
+	if query.BaseQueryID == query.QueryID {
+		ql.AppendNewCorp(query, qc)
+	}
 }
 
 func (ql *QueriesList) AppendProject(query *CxSASTClientGo.Query, projectId uint64, qc *CxSASTClientGo.QueryCollection) {
@@ -62,9 +70,13 @@ func (ql *QueriesList) AppendProject(query *CxSASTClientGo.Query, projectId uint
 		ql.ProjectQueriesToMigrate[projectId] = make([]*CxSASTClientGo.Query, 0)
 	}
 	list := ql.ProjectQueriesToMigrate[projectId]
-	newList := appendQueryToList(query, qc, &list)
+	newList := ql.appendQueryToList(query, qc, &list)
 	if &list != newList {
 		ql.ProjectQueriesToMigrate[projectId] = *newList
+	}
+
+	if query.BaseQueryID == query.QueryID {
+		ql.AppendNewCorp(query, qc)
 	}
 }
 
@@ -91,7 +103,7 @@ func (ql *QueriesList) FixGroups(qc *CxSASTClientGo.QueryCollection) {
 	}
 }
 
-func appendQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection, list *[]*CxSASTClientGo.Query) *[]*CxSASTClientGo.Query {
+func (ql *QueriesList) appendQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection, list *[]*CxSASTClientGo.Query) *[]*CxSASTClientGo.Query {
 	newList := list
 	if query.IsValid && query.IsCustom() {
 		if !slices.Contains(*newList, query) {
@@ -102,8 +114,12 @@ func appendQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryColl
 
 			for _, qid := range query.Dependencies {
 				qq := qc.GetQueryByID(qid)
-				if ((qq.OwningGroup.OwningProjectID > 0 && qq.OwningGroup.OwningProjectID == query.OwningGroup.OwningProjectID) || (qq.OwningGroup.OwningTeamID > 0 && qq.OwningGroup.OwningTeamID == query.OwningGroup.OwningTeamID)) && !slices.Contains(*newList, qq) {
-					newList = insertQueryToList(qq, qc, newList)
+				if !slices.Contains(*newList, qq) {
+					if (qq.OwningGroup.OwningProjectID > 0 && qq.OwningGroup.OwningProjectID == query.OwningGroup.OwningProjectID) || (qq.OwningGroup.OwningTeamID > 0 && qq.OwningGroup.OwningTeamID == query.OwningGroup.OwningTeamID) {
+						newList = insertQueryToList(qq, qc, newList)
+					} else if qq.OwningGroup.PackageType == CxSASTClientGo.CORP_QUERY {
+						ql.AppendCorp(qq, qc)
+					}
 				}
 			}
 
