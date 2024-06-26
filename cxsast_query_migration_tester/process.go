@@ -36,8 +36,9 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 			logger.Tracef("Processing query group %v", qc.QueryLanguages[lid].QueryGroups[gid].String())
 			switch qc.QueryLanguages[lid].QueryGroups[gid].PackageType {
 			case CxSASTClientGo.CORP_QUERY:
-				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
-					queriesList.AppendCorp(&query, qc)
+				for qid := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
+					query := &qc.QueryLanguages[lid].QueryGroups[gid].Queries[qid]
+					queriesList.AppendCorp(query, qc)
 					uniqueQIDs = append(uniqueQIDs, query.QueryID)
 					//queriesList.CorpQueriesToMigrate = appendQueryToList(&query, qc, corpQueriesToMigrate)
 
@@ -45,13 +46,14 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 			case CxSASTClientGo.TEAM_QUERY:
 				//qg := &qc.QueryLanguages[lid].QueryGroups[gid]
 
-				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
+				for qid := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
+					query := &qc.QueryLanguages[lid].QueryGroups[gid].Queries[qid]
 					if query.IsValid {
 						destName := ""
 						if query.BaseQueryID == query.QueryID { // team override doesn't inherit from anything, need to create a corp-level base in Cx1
-							queriesList.AppendNewCorp(&query, qc)
+							queriesList.AppendNewCorp(query, qc)
 						} else {
-							baseQuery, err := getCx1RootQuery(cx1client, qc, &query)
+							baseQuery, err := getCx1RootQuery(cx1client, qc, query)
 							if err != nil {
 								logger.Errorf("Unable to migrate query %v: failed to get cx1 root query: %s", query.StringDetailed(), err)
 								continue
@@ -60,7 +62,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 						}
 
 						teamId := qc.QueryLanguages[lid].QueryGroups[gid].OwningTeamID
-						newMergedQuery, err := makeMergedQuery(qc, &query, destName, teamsById)
+						newMergedQuery, err := makeMergedQuery(qc, query, destName, teamsById)
 						if err != nil {
 							logger.Errorf("Unable to migrate query %v: failed to make merged query: %s", query.StringDetailed(), err)
 						} else {
@@ -71,13 +73,14 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 				}
 
 			case CxSASTClientGo.PROJECT_QUERY:
-				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
+				for qid := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
+					query := &qc.QueryLanguages[lid].QueryGroups[gid].Queries[qid]
 					if query.IsValid {
 						if query.BaseQueryID == query.QueryID { // project override doesn't inherit from anything, need to create a corp-level base in Cx1
-							queriesList.AppendNewCorp(&query, qc)
+							queriesList.AppendNewCorp(query, qc)
 						}
 						projectId := qc.QueryLanguages[lid].QueryGroups[gid].OwningProjectID
-						queriesList.AppendProject(&query, projectId, qc)
+						queriesList.AppendProject(query, projectId, qc)
 						uniqueQIDs = append(uniqueQIDs, query.QueryID)
 					}
 				}
