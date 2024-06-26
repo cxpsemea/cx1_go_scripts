@@ -23,12 +23,16 @@ func NewQueriesList() QueriesList {
 }
 
 func (ql *QueriesList) AppendCorp(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection) {
-	logger.Infof("Appending corp query to migrate: %v", query.StringDetailed())
-	ql.CorpQueriesToMigrate = ql.appendQueryToList(query, qc, ql.CorpQueriesToMigrate)
+	if !slices.Contains(*ql.CorpQueriesToMigrate, query) {
+		logger.Infof("Appending corp query to migrate: %v", query.StringDetailed())
+		ql.CorpQueriesToMigrate = ql.appendQueryToList(query, qc, ql.CorpQueriesToMigrate)
+	}
 }
 func (ql *QueriesList) AppendNewCorp(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection) {
-	logger.Infof("Appending corp-base query to create: %v", query.StringDetailed())
-	ql.CorpQueriesToCreate = ql.appendQueryToList(query, qc, ql.CorpQueriesToCreate)
+	if !slices.Contains(*ql.CorpQueriesToCreate, query) {
+		logger.Infof("Appending corp-base query to create: %v", query.StringDetailed())
+		ql.CorpQueriesToCreate = ql.appendQueryToList(query, qc, ql.CorpQueriesToCreate)
+	}
 }
 func (ql *QueriesList) AppendTeam(query *CxSASTClientGo.Query, teamId uint64, qc *CxSASTClientGo.QueryCollection) {
 	logger.Infof("Appending team %d override query to migrate: %v", teamId, query.StringDetailed())
