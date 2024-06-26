@@ -34,6 +34,7 @@ func main() {
 	SASTURL := flag.String("sast", "", "Checkmarx SAST server URL")
 	SASTUser := flag.String("user", "", "Checkmarx SAST username")
 	SASTPass := flag.String("pass", "", "Checkmarx SAST password")
+	LogLevel := flag.String("log", "INFO", "Log level: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL")
 
 	ProjectID := flag.Uint64("projectId", 0, "Checkmarx SAST Project ID (optional)")
 	ProjectName := flag.String("projectName", "", "Checkmarx SAST Project Name (optional)")
@@ -44,6 +45,29 @@ func main() {
 	HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
 
 	flag.Parse()
+
+	switch strings.ToUpper(*LogLevel) {
+	case "TRACE":
+		logger.Info("Setting log level to TRACE")
+		logger.SetLevel(logrus.TraceLevel)
+	case "DEBUG":
+		logger.Info("Setting log level to DEBUG")
+		logger.SetLevel(logrus.DebugLevel)
+	case "INFO":
+		logger.Info("Setting log level to INFO")
+		logger.SetLevel(logrus.InfoLevel)
+	case "WARNING":
+		logger.Info("Setting log level to WARNING")
+		logger.SetLevel(logrus.WarnLevel)
+	case "ERROR":
+		logger.Info("Setting log level to ERROR")
+		logger.SetLevel(logrus.ErrorLevel)
+	case "FATAL":
+		logger.Info("Setting log level to FATAL")
+		logger.SetLevel(logrus.FatalLevel)
+	default:
+		logger.Info("Log level set to default: INFO")
+	}
 
 	httpClient := &http.Client{}
 

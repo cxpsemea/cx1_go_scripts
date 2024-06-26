@@ -7,7 +7,6 @@ import (
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/cxpsemea/CxSASTClientGo"
-	"github.com/sirupsen/logrus"
 )
 
 /*
@@ -22,61 +21,109 @@ type MigratedQuery struct {
 
 var QueryMigrationStatus map[uint64]MigratedQuery = make(map[uint64]MigratedQuery)
 
-func DoProcess(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project) {
-	InitializeQueryMigration(cx1client)
+func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project) QueriesList {
+	queriesList := NewQueriesList()
 
-	corpQueriesToMigrate := []uint64{}
+	/*corpQueriesToMigrate := []uint64{}
 	corpQueriesToCreate := []uint64{}
 	teamQueriesToMigrate := make(map[uint64][]uint64)
-	projectQueriesToMigrate := make(map[uint64][]uint64)
-	projectsPerTeam := make(map[uint64][]uint64)
-
-	for _, project := range *projectsById {
-		if _, ok := projectsPerTeam[project.TeamID]; !ok {
-			projectsPerTeam[project.TeamID] = []uint64{}
-		}
-		projectsPerTeam[project.TeamID] = append(projectsPerTeam[project.TeamID], project.ProjectID)
-	}
+	projectQueriesToMigrate := make(map[uint64][]uint64)*/
 
 	for lid := range qc.QueryLanguages {
 		for gid := range qc.QueryLanguages[lid].QueryGroups {
 			switch qc.QueryLanguages[lid].QueryGroups[gid].PackageType {
 			case CxSASTClientGo.CORP_QUERY:
 				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
-					logger.Infof("Appending corp query to migrate: %v", query.StringDetailed())
-					corpQueriesToMigrate = appendQueryToList(&query, qc, corpQueriesToMigrate, logger)
+					queriesList.AppendCorp(&query, qc)
+					//queriesList.CorpQueriesToMigrate = appendQueryToList(&query, qc, corpQueriesToMigrate)
 
 				}
 			case CxSASTClientGo.TEAM_QUERY:
+				//qg := &qc.QueryLanguages[lid].QueryGroups[gid]
+
 				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
 					if query.IsValid {
-						if query.BaseQueryID == query.QueryID { // doesn't inherit from anything
-							logger.Infof("Appending team-override corp-base query to create: %v", query.StringDetailed())
-							corpQueriesToCreate = appendQueryToList(&query, qc, corpQueriesToCreate, logger)
-
+						destName := ""
+						if query.BaseQueryID == query.QueryID { // team override doesn't inherit from anything, need to create a corp-level base in Cx1
+							queriesList.AppendNewCorp(&query, qc)
 						} else {
-							teamId := qc.QueryLanguages[lid].QueryGroups[gid].OwningTeamID
-							if _, ok := teamQueriesToMigrate[teamId]; !ok {
-								teamQueriesToMigrate[teamId] = make([]uint64, 0)
+							baseQuery, err := getCx1RootQuery(cx1client, qc, &query)
+							if err != nil {
+								logger.Errorf("Unable to migrate query %v: failed to get cx1 root query: %s", query.StringDetailed(), err)
+								continue
 							}
-							logger.Infof("Appending team-override query to migrate: %v", query.StringDetailed())
-							teamQueriesToMigrate[teamId] = appendQueryToList(&query, qc, teamQueriesToMigrate[teamId], logger)
+							destName = baseQuery.Name
+						}
+
+						teamId := qc.QueryLanguages[lid].QueryGroups[gid].OwningTeamID
+						newMergedQuery, err := makeMergedQuery(qc, &query, destName, teamsById)
+						if err != nil {
+							logger.Errorf("Unable to migrate query %v: failed to make merged query: %s", query.StringDetailed(), err)
+						} else {
+							queriesList.AppendTeam(&newMergedQuery, teamId, qc)
 						}
 					}
 				}
+
 			case CxSASTClientGo.PROJECT_QUERY:
 				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
 					if query.IsValid {
-						if query.BaseQueryID == query.QueryID { // doesn't inherit from anything
-							logger.Infof("Appending project-override corp-base query to create: %v", query.StringDetailed())
-							corpQueriesToCreate = appendQueryToList(&query, qc, corpQueriesToCreate, logger)
-						} else {
-							projectId := qc.QueryLanguages[lid].QueryGroups[gid].OwningProjectID
-							if _, ok := projectQueriesToMigrate[projectId]; !ok {
-								projectQueriesToMigrate[projectId] = make([]uint64, 0)
+						if query.BaseQueryID == query.QueryID { // project override doesn't inherit from anything, need to create a corp-level base in Cx1
+							queriesList.AppendNewCorp(&query, qc)
+						}
+						projectId := qc.QueryLanguages[lid].QueryGroups[gid].OwningProjectID
+						queriesList.AppendProject(&query, projectId, qc)
+					}
+				}
+			}
+		}
+	}
+
+	// For team-query-migrations, need to add the parent-team queries which are outside of the current-team-query dependencies
+	// eg: team1 has Stored_XSS
+	//     team1\team2 has sql_injection
+	// Migrating team2 should include the team1 Stored_XSS
+	for teamId := range queriesList.TeamQueriesToMigrate {
+		team := (*teamsById)[teamId]
+		logger.Debugf("Checking team %v parent teams for in-scope queries", team.String())
+		dependencies := []uint64{}
+
+		// first list out the queries we already need to satisfy this team's dependencies
+		for _, query := range queriesList.TeamQueriesToMigrate[teamId] {
+			for qq := query; qq != nil && qq.BaseQueryID != qq.QueryID; qq = qc.GetQueryByID(qq.BaseQueryID) {
+				if qq.OwningGroup.PackageType != CxSASTClientGo.TEAM_QUERY {
+					break
+				}
+				if !slices.Contains(dependencies, qq.QueryID) {
+					dependencies = append(dependencies, qq.QueryID)
+
+					for _, depId := range qq.CustomDependencies {
+						if !slices.Contains(dependencies, depId) {
+							dependencies = append(dependencies, depId)
+						}
+					}
+				}
+			}
+		}
+
+		// next find the queries in the parent team(s) that are not already counted as a dependency
+		teamPath := makeTeamHierarchy(teamId, teamsById)
+		for _, parentTeamId := range teamPath {
+			pteam := (*teamsById)[parentTeamId]
+			logger.Debugf("Checking team %v's parent team %v queries", team.String(), pteam.String())
+			for _, query := range queriesList.TeamQueriesToMigrate[parentTeamId] {
+				for qq := query; qq != nil && qq.BaseQueryID != qq.QueryID; qq = qc.GetQueryByID(qq.BaseQueryID) {
+					if qq.OwningGroup.PackageType != CxSASTClientGo.TEAM_QUERY {
+						break
+					}
+					if !slices.Contains(dependencies, qq.QueryID) {
+						dependencies = append(dependencies, qq.QueryID)
+						queriesList.InsertTeam(qq, teamId, qc)
+
+						for _, depId := range qq.CustomDependencies {
+							if !slices.Contains(dependencies, depId) {
+								dependencies = append(dependencies, depId)
 							}
-							logger.Infof("Appending project-override query to migrate: %v", query.StringDetailed())
-							projectQueriesToMigrate[projectId] = appendQueryToList(&query, qc, projectQueriesToMigrate[projectId], logger)
 						}
 					}
 				}
@@ -84,62 +131,138 @@ func DoProcess(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollect
 		}
 	}
 
-	// now migrate
+	return queriesList
+}
 
-	for _, queryId := range corpQueriesToCreate {
-		sastq := qc.GetQueryByID(queryId)
-		cx1q, err := MigrateCorpQuery(cx1client, qc, sastq, logger)
+func MigrateQueries(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, projectsPerTeam *map[uint64][]uint64, queriesList QueriesList) {
+	for _, sastq := range *queriesList.CorpQueriesToCreate {
+		//sastq := qc.GetQueryByID(queryId)
+		cx1q, err := MigrateEmptyCorpQuery(cx1client, qc, sastq)
 		if err != nil {
-			logger.Errorf("Failed to create empty new corp query prerequisite for %v", sastq.StringDetailed())
+			logger.Errorf("Failed to create new corp query prerequisite for %v", sastq.StringDetailed())
 		} else {
-			logger.Infof("Successfully migrated %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
+			logger.Infof("Successfully migrated corp query %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
 		}
 		QueryMigrationStatus[sastq.QueryID] = MigratedQuery{sastq, cx1q, err}
 	}
 
-	for _, queryId := range corpQueriesToMigrate {
-		sastq := qc.GetQueryByID(queryId)
-		cx1q, err := MigrateCorpQuery(cx1client, qc, sastq, logger)
+	for _, sastq := range *queriesList.CorpQueriesToMigrate {
+		cx1q, err := MigrateCorpQuery(cx1client, qc, sastq)
 		if err != nil {
 			logger.Errorf("Failed to migrate corp query %v", sastq.StringDetailed())
 		} else {
-			logger.Infof("Successfully migrated %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
+			logger.Infof("Successfully migrated corp query %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
 		}
 		QueryMigrationStatus[sastq.QueryID] = MigratedQuery{sastq, cx1q, err}
 	}
 
-	for teamId := range teamQueriesToMigrate {
-		if _, ok := projectsPerTeam[teamId]; ok && len(projectsPerTeam[teamId]) > 0 {
-			// team has projects, so needs to have queries migrated
-			for _, qid := range teamQueriesToMigrate[teamId] {
-				query := qc.GetQueryByID(qid)
-				baseQuery, err := getCx1RootQuery(cx1client, qc, query)
-				var cx1q *Cx1ClientGo.Query
+	for teamId := range queriesList.TeamQueriesToMigrate {
+		if _, ok := (*projectsPerTeam)[teamId]; ok && len((*projectsPerTeam)[teamId]) > 0 {
+			for _, query := range queriesList.TeamQueriesToMigrate[teamId] {
+				cx1q, err := MigrateTeamQuery(cx1client, qc, query)
 				if err != nil {
-					logger.Errorf("Unable to migrate query %v: failed to get cx1 root query: %s", query.StringDetailed(), err)
+					logger.Errorf("Failed to migrate team query %v: %s", query.StringDetailed(), err)
 				} else {
-					var newMergedQuery CxSASTClientGo.Query
-					newMergedQuery, err = makeMergedQuery(qc, query, baseQuery, teamsById, logger)
-					if err != nil {
-						logger.Errorf("Unable to migrate query %v: failed to make merged query: %s", query.StringDetailed(), err)
-					} else {
-						cx1q, err = MigrateTeamQuery(cx1client, qc, &newMergedQuery, logger)
-						if err != nil {
-							logger.Errorf("Failed to migrate query %v: %s", query.StringDetailed(), err)
-						} else {
-							logger.Infof("Successfully migrated %v to %v", query.StringDetailed(), cx1q.StringDetailed())
-						}
-					}
+					logger.Infof("Successfully migrated team query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
 				}
-				QueryMigrationStatus[qid] = MigratedQuery{
-					Cxsq: query,
-					Cx1q: cx1q,
-					Err:  err,
-				}
+				QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
 			}
 		}
 	}
 
+	for projectId := range queriesList.ProjectQueriesToMigrate {
+		for _, query := range queriesList.ProjectQueriesToMigrate[projectId] {
+			cx1q, err := MigrateProjectQuery(cx1client, qc, query)
+			if err != nil {
+				logger.Errorf("Failed to migrate project query %v: %s", query.StringDetailed(), err)
+			} else {
+				logger.Infof("Successfully migrated project query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
+			}
+			QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
+		}
+	}
+}
+
+func MigrateTeamQueries(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, queriesList QueriesList, teamId uint64) {
+	for _, query := range queriesList.TeamQueriesToMigrate[teamId] {
+		cx1q, err := MigrateTeamQuery(cx1client, qc, query)
+		if err != nil {
+			logger.Errorf("Failed to migrate team query %v: %s", query.StringDetailed(), err)
+		} else {
+			logger.Infof("Successfully migrated team query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
+		}
+		QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
+	}
+}
+
+func MigrateProjectQueries(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, queriesList QueriesList, projectId uint64) {
+	for _, query := range queriesList.ProjectQueriesToMigrate[projectId] {
+		cx1q, err := MigrateProjectQuery(cx1client, qc, query)
+		if err != nil {
+			logger.Errorf("Failed to migrate project query %v: %s", query.StringDetailed(), err)
+		} else {
+			logger.Infof("Successfully migrated project query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
+		}
+		QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
+	}
+}
+
+func MigrateQuery(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, queriesList QueriesList, queryId uint64) {
+
+	for _, sastq := range *queriesList.CorpQueriesToCreate {
+		if sastq.QueryID == queryId {
+			cx1q, err := MigrateEmptyCorpQuery(cx1client, qc, sastq)
+			if err != nil {
+				logger.Errorf("Failed to create new corp query prerequisite for %v", sastq.StringDetailed())
+			} else {
+				logger.Infof("Successfully migrated corp query %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
+			}
+			QueryMigrationStatus[sastq.QueryID] = MigratedQuery{sastq, cx1q, err}
+		}
+	}
+
+	for _, sastq := range *queriesList.CorpQueriesToMigrate {
+		if sastq.QueryID == queryId {
+			cx1q, err := MigrateCorpQuery(cx1client, qc, sastq)
+			if err != nil {
+				logger.Errorf("Failed to migrate corp query %v", sastq.StringDetailed())
+			} else {
+				logger.Infof("Successfully migrated corp query %v to %v", sastq.StringDetailed(), cx1q.StringDetailed())
+			}
+			QueryMigrationStatus[sastq.QueryID] = MigratedQuery{sastq, cx1q, err}
+		}
+	}
+
+	for teamId := range queriesList.TeamQueriesToMigrate {
+		for _, query := range queriesList.TeamQueriesToMigrate[teamId] {
+			if query.QueryID == queryId {
+				cx1q, err := MigrateTeamQuery(cx1client, qc, query)
+				if err != nil {
+					logger.Errorf("Failed to migrate team query %v: %s", query.StringDetailed(), err)
+				} else {
+					logger.Infof("Successfully migrated team query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
+				}
+				QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
+			}
+		}
+	}
+
+	for projectId := range queriesList.ProjectQueriesToMigrate {
+		for _, query := range queriesList.ProjectQueriesToMigrate[projectId] {
+			if query.QueryID == queryId {
+				cx1q, err := MigrateProjectQuery(cx1client, qc, query)
+				if err != nil {
+					logger.Errorf("Failed to migrate project query %v: %s", query.StringDetailed(), err)
+				} else {
+					logger.Infof("Successfully migrated project query %v to %v", query.StringDetailed(), cx1q.StringDetailed())
+				}
+				QueryMigrationStatus[query.QueryID] = MigratedQuery{query, cx1q, err}
+			}
+		}
+	}
+}
+
+func Summary() {
 	/// afterwards output the status
 
 	keys := make([]string, 0, len(QueryMigrationStatus))
@@ -163,41 +286,7 @@ func DoProcess(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollect
 	}
 }
 
-func appendQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection, list []uint64, logger *logrus.Logger) []uint64 {
-	newList := list
-	if query.IsValid && query.IsCustom() && !slices.Contains(newList, query.QueryID) {
-		logger.Debug(" - appended query")
-		newList = append(newList, query.QueryID)
-		for _, qid := range query.Dependencies {
-			qq := qc.GetQueryByID(qid)
-			if ((qq.OwningGroup.OwningProjectID > 0 && qq.OwningGroup.OwningProjectID == query.OwningGroup.OwningProjectID) || (qq.OwningGroup.OwningTeamID > 0 && qq.OwningGroup.OwningTeamID == query.OwningGroup.OwningTeamID)) && !slices.Contains(newList, qid) {
-				newList = prependQueryToList(qq, qc, newList, logger)
-			}
-		}
-	} else {
-		logger.Debug(" - already in list")
-	}
-
-	return newList
-}
-
-func prependQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection, list []uint64, logger *logrus.Logger) []uint64 {
-	newList := list
-	if query.IsValid && query.IsCustom() {
-		logger.Debugf(" - inserted query for dependency: %v", query.StringDetailed())
-
-		newList = append([]uint64{query.QueryID}, newList...)
-		for _, qid := range query.Dependencies {
-			qq := qc.GetQueryByID(qid)
-			if ((qq.OwningGroup.OwningProjectID == query.OwningGroup.OwningProjectID) || (qq.OwningGroup.OwningTeamID > 0)) && !slices.Contains(newList, qid) {
-				newList = prependQueryToList(qq, qc, newList, logger)
-			}
-		}
-	}
-	return newList
-}
-
-func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, dest *Cx1ClientGo.Query, teamsById *map[uint64]*CxSASTClientGo.Team, logger *logrus.Logger) (CxSASTClientGo.Query, error) {
+func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (CxSASTClientGo.Query, error) {
 	merger := QueryMerger{}
 
 	var owner string
@@ -222,16 +311,25 @@ func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.
 		}
 	}
 
-	code, err := merger.Merge(dest.Name)
+	code, err := merger.Merge(destName)
 	if err != nil {
 		return *source, err
 	}
 	newQuery := *source
 	newQuery.Source = code
 
-	logger.Debugf("Created merged query for %v:\n%v", q.StringDetailed(), strings.Join(mergeString, "\n"))
-	logger.Debugf("Generated code:\n%v", code)
+	logger.Tracef("Created merged query for %v:\n%v", q.StringDetailed(), strings.Join(mergeString, "\n"))
+	logger.Tracef("Generated code:\n%v", code)
 
 	return newQuery, nil
 
+}
+
+func makeTeamHierarchy(teamId uint64, teamsById *map[uint64]*CxSASTClientGo.Team) []uint64 {
+	ret := []uint64{}
+
+	for team := (*teamsById)[teamId]; team != nil && team.ParentID > 0; team = (*teamsById)[team.ParentID] {
+		ret = append(ret, team.ParentID)
+	}
+	return ret
 }
