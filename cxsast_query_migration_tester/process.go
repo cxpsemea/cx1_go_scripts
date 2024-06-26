@@ -31,6 +31,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 
 	for lid := range qc.QueryLanguages {
 		for gid := range qc.QueryLanguages[lid].QueryGroups {
+			logger.Tracef("Processing query group %v", qc.QueryLanguages[lid].QueryGroups[gid].String())
 			switch qc.QueryLanguages[lid].QueryGroups[gid].PackageType {
 			case CxSASTClientGo.CORP_QUERY:
 				for _, query := range qc.QueryLanguages[lid].QueryGroups[gid].Queries {
@@ -79,6 +80,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 		}
 	}
 
+	logger.Trace("Checking in-scope queries from parent teams")
 	// For team-query-migrations, need to add the parent-team queries which are outside of the current-team-query dependencies
 	// eg: team1 has Stored_XSS
 	//     team1\team2 has sql_injection
