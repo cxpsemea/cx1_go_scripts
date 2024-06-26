@@ -20,7 +20,7 @@ dest can be nil if this is a brand new query with no base to override.
 in that case, make a tenant-level no-result query
 */
 func MigrateCorpQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query) (*Cx1ClientGo.Query, error) {
-	if err := refreshAuditSession(cx1client, sastqc, source.Language); err != nil {
+	if err := refreshAuditSession(cx1client, source.Language); err != nil {
 		return nil, err
 	}
 
@@ -34,7 +34,7 @@ func MigrateCorpQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.Q
 }
 
 func MigrateEmptyCorpQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query) (*Cx1ClientGo.Query, error) {
-	if err := refreshAuditSession(cx1client, sastqc, source.Language); err != nil {
+	if err := refreshAuditSession(cx1client, source.Language); err != nil {
 		return nil, err
 	}
 
@@ -42,7 +42,7 @@ func MigrateEmptyCorpQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClien
 }
 
 func MigrateTeamQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query) (*Cx1ClientGo.Query, error) {
-	if err := refreshAuditSession(cx1client, sastqc, source.Language); err != nil {
+	if err := refreshAuditSession(cx1client, source.Language); err != nil {
 		return nil, err
 	}
 
@@ -54,7 +54,7 @@ func MigrateTeamQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.Q
 }
 
 func MigrateProjectQuery(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query) (*Cx1ClientGo.Query, error) {
-	if err := refreshAuditSession(cx1client, sastqc, source.Language); err != nil {
+	if err := refreshAuditSession(cx1client, source.Language); err != nil {
 		return nil, err
 	}
 
@@ -126,7 +126,7 @@ func createNewCorpQuery(cx1client *Cx1ClientGo.Cx1Client, source *CxSASTClientGo
 	}
 
 	cx1q := cx1qc.GetQueryByLevelAndName(Cx1ClientGo.AUDIT_QUERY_TENANT, Cx1ClientGo.AUDIT_QUERY_TENANT, source.Language, source.Group, source.Name)
-	logger.Debugf("Searching for SAST query %v -> found Cx1 query %v", source.StringDetailed(), cx1q.StringDetailed())
+	//logger.Debugf("Searching for SAST query %v -> found Cx1 query %v", source.StringDetailed(), cx1q.StringDetailed())
 	if cx1q != nil {
 		cx1q, equiv := checkQueryEquivalent(cx1client, source, cx1q)
 		if equiv {
@@ -218,7 +218,7 @@ func createCorpOverride(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo
 	return createOverride(cx1client, sastqc, source, Cx1ClientGo.AUDIT_QUERY_TENANT)
 }
 
-func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, sastqc *CxSASTClientGo.QueryCollection, language string) error {
+func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
 	if auditSession != nil {
 		if auditSession.HasLanguage(language) {
 			return cx1client.AuditSessionKeepAlive(auditSession)

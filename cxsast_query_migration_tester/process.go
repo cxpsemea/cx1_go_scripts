@@ -64,7 +64,7 @@ func GenerateMigrationList(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.
 						if err != nil {
 							logger.Errorf("Unable to migrate query %v: failed to make merged query: %s", query.StringDetailed(), err)
 						} else {
-							queriesList.AppendTeam(&newMergedQuery, teamId, qc)
+							queriesList.AppendTeam(newMergedQuery, teamId, qc)
 							uniqueQIDs = append(uniqueQIDs, query.QueryID)
 						}
 					}
@@ -295,7 +295,7 @@ func Summary() {
 	}
 }
 
-func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (CxSASTClientGo.Query, error) {
+func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (*CxSASTClientGo.Query, error) {
 	merger := QueryMerger{}
 	logger.Tracef("Creating merged query for %v", source.StringDetailed())
 
@@ -325,12 +325,12 @@ func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.
 
 	if len(mergeString) <= 1 {
 		logger.Tracef("No queries to merge, returning original")
-		return *source, nil
+		return source, nil
 	}
 
 	code, err := merger.Merge(destName)
 	if err != nil {
-		return *source, err
+		return source, err
 	}
 	newQuery := *source
 	newQuery.Source = code
@@ -338,7 +338,7 @@ func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.
 	logger.Tracef("Created merged query for %v:\n%v", q.StringDetailed(), strings.Join(mergeString, "\n"))
 	logger.Tracef("Generated code:\n%v", code)
 
-	return newQuery, nil
+	return &newQuery, nil
 
 }
 
