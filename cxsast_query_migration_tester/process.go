@@ -290,6 +290,7 @@ func Summary() {
 
 func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (CxSASTClientGo.Query, error) {
 	merger := QueryMerger{}
+	logger.Tracef("Creating merged query for %v", source.StringDetailed())
 
 	var owner string
 	q := source
@@ -310,7 +311,14 @@ func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.
 			if q.OwningGroup.PackageType != CxSASTClientGo.TEAM_QUERY {
 				break
 			}
+		} else {
+			break
 		}
+	}
+
+	if len(mergeString) <= 1 {
+		logger.Tracef("No queries to merge, returning original")
+		return *source, nil
 	}
 
 	code, err := merger.Merge(destName)
