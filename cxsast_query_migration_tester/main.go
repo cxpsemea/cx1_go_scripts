@@ -115,6 +115,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Error creating CxSAST client: %s", err)
 	}
+	logger.Infof("Connected with %v", sastclient.String())
 
 	qc, _ := sastclient.GetQueriesSOAP()
 

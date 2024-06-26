@@ -326,7 +326,7 @@ func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.
 		}
 	}
 
-	if len(mergeString) <= 1 {
+	if len(mergeString) <= 1 && destName == source.Name {
 		logger.Tracef("No queries to merge, returning original")
 		return source, nil
 	}
