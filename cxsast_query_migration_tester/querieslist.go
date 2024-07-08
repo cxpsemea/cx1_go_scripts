@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/cxpsemea/CxSASTClientGo"
@@ -88,27 +89,40 @@ func (ql *QueriesList) AppendProject(query *CxSASTClientGo.Query, projectId uint
 	}
 }
 
-func (ql *QueriesList) FixGroups(qc *CxSASTClientGo.QueryCollection) {
+func (ql *QueriesList) FixGroups(qc *CxSASTClientGo.QueryCollection) error {
 	for _, q := range *ql.CorpQueriesToCreate {
 		qq := qc.GetQueryByID(q.QueryID)
+		if qq == nil {
+			return fmt.Errorf("failed to find query %v: query collection may have changed since queries.json was generated, please regenerate queries.json", q.String())
+		}
 		q.OwningGroup = qq.OwningGroup
 	}
 	for _, q := range *ql.CorpQueriesToMigrate {
 		qq := qc.GetQueryByID(q.QueryID)
+		if qq == nil {
+			return fmt.Errorf("failed to find query %v: query collection may have changed since queries.json was generated, please regenerate queries.json", q.String())
+		}
 		q.OwningGroup = qq.OwningGroup
 	}
 	for teamId := range ql.TeamQueriesToMigrate {
 		for _, q := range ql.TeamQueriesToMigrate[teamId] {
 			qq := qc.GetQueryByID(q.QueryID)
+			if qq == nil {
+				return fmt.Errorf("failed to find query %v: query collection may have changed since queries.json was generated, please regenerate queries.json", q.String())
+			}
 			q.OwningGroup = qq.OwningGroup
 		}
 	}
 	for projId := range ql.ProjectQueriesToMigrate {
 		for _, q := range ql.ProjectQueriesToMigrate[projId] {
 			qq := qc.GetQueryByID(q.QueryID)
+			if qq == nil {
+				return fmt.Errorf("failed to find query %v: query collection may have changed since queries.json was generated, please regenerate queries.json", q.String())
+			}
 			q.OwningGroup = qq.OwningGroup
 		}
 	}
+	return nil
 }
 
 func (ql *QueriesList) appendQueryToList(query *CxSASTClientGo.Query, qc *CxSASTClientGo.QueryCollection, list *[]*CxSASTClientGo.Query) *[]*CxSASTClientGo.Query {

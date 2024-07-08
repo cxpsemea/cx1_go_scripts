@@ -185,7 +185,9 @@ func RunMigrator(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryColle
 	}
 
 	// loaded queries in queries list do not have the query.OwningGroup set, need to fix that
-	ql.FixGroups(qc)
+	if err = ql.FixGroups(qc); err != nil {
+		logger.Fatalf("Error while migrating queries: %s", err)
+	}
 
 	if teamID != 0 {
 		MigrateTeamQueries(cx1client, qc, teamsById, projectsById, ql, teamID)
