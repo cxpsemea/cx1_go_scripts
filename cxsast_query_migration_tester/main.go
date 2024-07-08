@@ -50,6 +50,9 @@ func main() {
 	ProjectID := flag.Uint64("projectid", 0, "Create only queries for this project ID")
 	QueryID := flag.Uint64("queryid", 0, "Create only this specific query ID")
 
+	Cx1Project := flag.String("cx1-project", "", "Optional: Name of the project in CheckmarxOne to target with the query migration")
+	Cx1Application := flag.String("cx1-app", "", "Optional: Name of the application in CheckmarxOne to target with the query migration")
+
 	HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
 
 	flag.Parse()
@@ -146,9 +149,10 @@ func main() {
 		projectsPerTeam[project.TeamID] = append(projectsPerTeam[project.TeamID], project.ProjectID)
 	}
 
-	//DoProcess(cx1client, &qc, &teamsById, &projectsById)
+	SetTargets(cx1client, *Cx1Project, *Cx1Application)
+
 	if *Input != "" {
-		RunMigrator(cx1client, &qc, &teamsById, &projectsById, &projectsPerTeam, *Input, *TeamID, *ProjectID, *QueryID)
+		RunMigrator(cx1client, &qc, &teamsById, &projectsById, &projectsPerTeam, *Input, *TeamID, *ProjectID, *QueryID, *Cx1Project, *Cx1Application)
 	} else {
 		RunGenerator(cx1client, &qc, &teamsById, &projectsById, *Output)
 	}
@@ -168,7 +172,7 @@ func RunGenerator(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryColl
 	logger.Infof("Created output file %v", outfile)
 }
 
-func RunMigrator(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, projectsPerTeam *map[uint64][]uint64, infile string, teamID, projectID, queryID uint64) {
+func RunMigrator(cx1client *Cx1ClientGo.Cx1Client, qc *CxSASTClientGo.QueryCollection, teamsById *map[uint64]*CxSASTClientGo.Team, projectsById *map[uint64]*CxSASTClientGo.Project, projectsPerTeam *map[uint64][]uint64, infile string, teamID, projectID, queryID uint64, cx1proj, cx1app string) {
 	data, err := os.ReadFile(infile)
 	if err != nil {
 		logger.Fatalf("Failed to load data: %s", err)

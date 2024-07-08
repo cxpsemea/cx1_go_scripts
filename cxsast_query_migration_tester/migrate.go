@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/cxpsemea/CxSASTClientGo"
@@ -14,6 +16,75 @@ var auditSession *Cx1ClientGo.AuditSession
 var languageMap map[string]string
 var QueryMapping map[uint64]uint64
 var cx1qc Cx1ClientGo.QueryCollection
+var TargetProject Cx1ClientGo.Project
+var TargetApplication Cx1ClientGo.Application
+
+func SetTargets(cx1client *Cx1ClientGo.Cx1Client, cx1project, cx1application string) error {
+	var err error
+	if cx1project == "" && cx1application == "" {
+		TargetProject, TargetApplication, err = cx1client.GetOrCreateProjectInApplicationByName("CxPSEMEA-Query Migration Project", "CxPSEMEA-Query Migration Application")
+		return err
+	}
+	if cx1project != "" {
+		TargetProject, err = cx1client.GetProjectByName(cx1project)
+		if err != nil {
+			return err
+		}
+
+		if len(TargetProject.Applications) == 0 {
+			if cx1application != "" {
+				TargetApplication, err = cx1client.GetApplicationByName(cx1application)
+				if err != nil {
+					return err
+				}
+
+				TargetApplication.AssignProject(&TargetProject)
+				return cx1client.UpdateApplication(&TargetApplication)
+			}
+		} else {
+			if len(TargetProject.Applications) == 1 {
+				TargetApplication, err = cx1client.GetApplicationByID(TargetProject.Applications[0])
+				return err
+			} else {
+				return fmt.Errorf("project %v belongs to %d applications - it is not possible to migrate team-level queries (project must belong to 1 application)", TargetProject.String(), len(TargetProject.Applications))
+			}
+		}
+	}
+
+	TargetProject, err = cx1client.GetOrCreateProjectByName("CxPSEMEA-Query Migration Project")
+	if err != nil {
+		return err
+	}
+
+	TargetApplication, err = cx1client.GetApplicationByName(cx1application)
+	if err != nil {
+		return err
+	}
+
+	if !slices.Contains(TargetProject.Applications, TargetApplication.ApplicationID) {
+		for _, appid := range TargetProject.Applications {
+			app, err := cx1client.GetApplicationByID(appid)
+
+			if err != nil {
+				return err
+			}
+
+			app.UnassignProject(&TargetProject)
+			if err = cx1client.UpdateApplication(&app); err != nil {
+				return fmt.Errorf("failed to unassign project %v from currently-assigned application %v: %s", TargetProject.String(), TargetApplication.String(), err)
+			}
+		}
+
+		TargetApplication.AssignProject(&TargetProject)
+		if err = cx1client.UpdateApplication(&TargetApplication); err != nil {
+			return err
+		}
+
+		TargetProject, err = cx1client.GetProjectByID(TargetProject.ProjectID)
+	}
+
+	return nil
+}
 
 /*
 dest can be nil if this is a brand new query with no base to override.
@@ -236,18 +307,13 @@ func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) erro
 }
 
 func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
-	testProject, _, err := cx1client.GetOrCreateProjectInApplicationByName("CxPSEMEA-Query Migration Project", "CxPSEMEA-Query Migration Application")
-	if err != nil {
-		return err
-	}
-
 	filter := Cx1ClientGo.ScanFilter{
 		Limit:    1,
 		Offset:   0,
 		Branches: []string{language},
 		Statuses: []string{"Completed"},
 	}
-	scans, err := cx1client.GetLastScansByIDFiltered(testProject.ProjectID, filter)
+	scans, err := cx1client.GetLastScansByIDFiltered(TargetProject.ProjectID, filter)
 	if err != nil {
 		return err
 	}
@@ -268,7 +334,7 @@ func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error
 			return err
 		}
 
-		lastscan, err = cx1client.ScanProjectZipByID(testProject.ProjectID, uploadURL, language, []Cx1ClientGo.ScanConfiguration{sastScanConfig}, map[string]string{})
+		lastscan, err = cx1client.ScanProjectZipByID(TargetProject.ProjectID, uploadURL, language, []Cx1ClientGo.ScanConfiguration{sastScanConfig}, map[string]string{})
 		if err != nil {
 			return err
 		}
@@ -285,7 +351,7 @@ func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error
 		lastscan = scans[0]
 	}
 
-	session, err := cx1client.GetAuditSessionByID("sast", testProject.ProjectID, lastscan.ScanID)
+	session, err := cx1client.GetAuditSessionByID("sast", TargetProject.ProjectID, lastscan.ScanID)
 	if err != nil {
 		return err
 	}
@@ -293,7 +359,7 @@ func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error
 	auditSession = &session
 	logger.Debugf("Created audit session with languages: %v", auditSession.Languages)
 
-	aq, err := cx1client.GetAuditQueriesByLevelID(&session, Cx1ClientGo.AUDIT_QUERY_PROJECT, testProject.ProjectID)
+	aq, err := cx1client.GetAuditQueriesByLevelID(&session, Cx1ClientGo.AUDIT_QUERY_PROJECT, TargetProject.ProjectID)
 	if err != nil {
 		return fmt.Errorf("error getting queries: %s", err)
 	}
@@ -384,4 +450,60 @@ func makeZip(zipContents *[]byte, language string) ([]byte, error) {
 
 	zipWriter.Close()
 	return contents.Bytes(), nil
+}
+
+func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (*CxSASTClientGo.Query, error) {
+	merger := QueryMerger{}
+	logger.Tracef("Creating merged query for %v", source.StringDetailed())
+
+	var owner string
+	q := source
+
+	mergeString := []string{}
+
+	for {
+		team, ok := (*teamsById)[q.OwningGroup.OwningTeamID]
+		if !ok {
+			break
+		}
+		owner = team.String()
+		merger.Insert(q, owner)
+		mergeString = append(mergeString, fmt.Sprintf(" - %v", q.StringDetailed()))
+
+		if q.BaseQueryID != q.QueryID {
+			q = qc.GetQueryByID(q.BaseQueryID)
+			if q.OwningGroup.PackageType != CxSASTClientGo.TEAM_QUERY {
+				break
+			}
+		} else {
+			break
+		}
+	}
+
+	if len(mergeString) <= 1 && destName == source.Name {
+		logger.Tracef("No queries to merge, returning original")
+		return source, nil
+	}
+
+	code, err := merger.Merge(destName)
+	if err != nil {
+		return source, err
+	}
+	newQuery := *source
+	newQuery.Source = code
+
+	logger.Tracef("Created merged query for %v:\n%v", q.StringDetailed(), strings.Join(mergeString, "\n"))
+	logger.Tracef("Generated code:\n%v", code)
+
+	return &newQuery, nil
+
+}
+
+func makeTeamHierarchy(teamId uint64, teamsById *map[uint64]*CxSASTClientGo.Team) []uint64 {
+	ret := []uint64{}
+
+	for team := (*teamsById)[teamId]; team != nil && team.ParentID > 0; team = (*teamsById)[team.ParentID] {
+		ret = append(ret, team.ParentID)
+	}
+	return ret
 }

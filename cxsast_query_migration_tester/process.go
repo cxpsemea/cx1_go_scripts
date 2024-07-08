@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/cxpsemea/CxSASTClientGo"
@@ -296,60 +295,4 @@ func Summary() {
 			logger.Infof("OK: %v -> %v", qms.Cxsq.StringDetailed(), qms.Cx1q.StringDetailed())
 		}
 	}
-}
-
-func makeMergedQuery(qc *CxSASTClientGo.QueryCollection, source *CxSASTClientGo.Query, destName string, teamsById *map[uint64]*CxSASTClientGo.Team) (*CxSASTClientGo.Query, error) {
-	merger := QueryMerger{}
-	logger.Tracef("Creating merged query for %v", source.StringDetailed())
-
-	var owner string
-	q := source
-
-	mergeString := []string{}
-
-	for {
-		team, ok := (*teamsById)[q.OwningGroup.OwningTeamID]
-		if !ok {
-			break
-		}
-		owner = team.String()
-		merger.Insert(q, owner)
-		mergeString = append(mergeString, fmt.Sprintf(" - %v", q.StringDetailed()))
-
-		if q.BaseQueryID != q.QueryID {
-			q = qc.GetQueryByID(q.BaseQueryID)
-			if q.OwningGroup.PackageType != CxSASTClientGo.TEAM_QUERY {
-				break
-			}
-		} else {
-			break
-		}
-	}
-
-	if len(mergeString) <= 1 && destName == source.Name {
-		logger.Tracef("No queries to merge, returning original")
-		return source, nil
-	}
-
-	code, err := merger.Merge(destName)
-	if err != nil {
-		return source, err
-	}
-	newQuery := *source
-	newQuery.Source = code
-
-	logger.Tracef("Created merged query for %v:\n%v", q.StringDetailed(), strings.Join(mergeString, "\n"))
-	logger.Tracef("Generated code:\n%v", code)
-
-	return &newQuery, nil
-
-}
-
-func makeTeamHierarchy(teamId uint64, teamsById *map[uint64]*CxSASTClientGo.Team) []uint64 {
-	ret := []uint64{}
-
-	for team := (*teamsById)[teamId]; team != nil && team.ParentID > 0; team = (*teamsById)[team.ParentID] {
-		ret = append(ret, team.ParentID)
-	}
-	return ret
 }
