@@ -81,6 +81,7 @@ func SetTargets(cx1client *Cx1ClientGo.Cx1Client, cx1project, cx1application str
 		}
 
 		TargetProject, err = cx1client.GetProjectByID(TargetProject.ProjectID)
+		return err
 	}
 
 	return nil
