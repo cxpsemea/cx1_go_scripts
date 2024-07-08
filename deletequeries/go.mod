@@ -18,4 +18,3 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 )
 
-replace github.com/cxpsemea/Cx1ClientGo => c:/work/code/Cx1ClientGo
