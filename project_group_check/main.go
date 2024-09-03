@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"slices"
@@ -26,6 +27,7 @@ func main() {
 	logger.Info("The purpose of this tool is to validate that all projects have membership in valid groups.")
 
 	change := flag.Bool("update", false, "Enable making updates to fix the issue")
+	bulk := flag.Bool("bulk", false, "Update all projects (if true), otherwise do one project at a time")
 
 	projectsFile := flag.String("project-file", "", "File containing a CheckmarxOne /api/projects response json")
 	groupsFile := flag.String("group-file", "", "File containing a CheckmarxOne IAM /admin/../groups response json")
@@ -58,6 +60,12 @@ func main() {
 		}
 	} else {
 		logger.Infof("Running without update flag set - no changes will be made")
+	}
+
+	if *bulk {
+		logger.Infof("Running with bulk flag set - all projects will be processed")
+	} else {
+		logger.Infof("Running without bulk flag set - projects will be processed one at a time, with a prompt to continue")
 	}
 
 	var groups []Cx1ClientGo.Group
@@ -150,6 +158,17 @@ func main() {
 			}
 		} else {
 			logger.Infof("Project %v contains %d valid groups and no invalid groups.", project.String(), len(goodGroupIDs))
+		}
+
+		if !*bulk {
+			logger.Infof("Pausing between projects - continue? [y/n]")
+			var str string
+			fmt.Scan(&str)
+			if !strings.EqualFold(str, "y") {
+				logger.Infof("Process terminated by user.")
+				break
+			}
+
 		}
 	}
 
