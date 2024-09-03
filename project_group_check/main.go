@@ -29,6 +29,8 @@ func main() {
 	change := flag.Bool("update", false, "Enable making updates to fix the issue")
 	bulk := flag.Bool("bulk", false, "Update all projects (if true), otherwise do one project at a time")
 
+	projectName := flag.String("project", "", "Name of a specific project to check")
+
 	projectsFile := flag.String("project-file", "", "File containing a CheckmarxOne /api/projects response json")
 	groupsFile := flag.String("group-file", "", "File containing a CheckmarxOne IAM /admin/../groups response json")
 
@@ -116,60 +118,71 @@ func main() {
 	}
 
 	logger.Infof("Processing %d projects and %d groups", len(projects), len(groups))
+	if *projectName != "" {
+		logger.Infof("Will evaluate only the specified project: %v", *projectName)
+	}
 
 	groupsByID := make(map[string]*Cx1ClientGo.Group)
 	for i, group := range groups {
 		groupsByID[group.GroupID] = &groups[i]
 	}
 
+	checkedProjects := 0
 	fixedProjects := 0
 
 	for _, project := range projects {
-		goodGroupIDs := []string{}
-		badGroupIDs := []string{}
-		for _, groupId := range project.Groups {
-			if _, ok := groupsByID[groupId]; ok {
-				if !slices.Contains(goodGroupIDs, groupId) {
-					goodGroupIDs = append(goodGroupIDs, groupId)
+		if *projectName == "" || *projectName == project.Name {
+			checkedProjects++
+			goodGroupIDs := []string{}
+			badGroupIDs := []string{}
+			for _, groupId := range project.Groups {
+				if _, ok := groupsByID[groupId]; ok {
+					if !slices.Contains(goodGroupIDs, groupId) {
+						goodGroupIDs = append(goodGroupIDs, groupId)
+					}
+				} else {
+					if !slices.Contains(badGroupIDs, groupId) {
+						badGroupIDs = append(badGroupIDs, groupId)
+					}
+
+					if !slices.Contains(InvalidGroupIDs, groupId) {
+						InvalidGroupIDs = append(InvalidGroupIDs, groupId)
+					}
+				}
+			}
+
+			if len(badGroupIDs) > 0 {
+				fixedProjects++
+				logger.Warnf("Project %v contains %d valid groups and %d invalid groups.", project.String(), len(goodGroupIDs), len(badGroupIDs))
+				logger.Warnf("Invalid groups: %v", strings.Join(badGroupIDs, ", "))
+				if doUpdate && goOnline {
+					logger.Infof("Updating project to remove the invalid groups")
+					project.Groups = goodGroupIDs
+					if err = cx1client.UpdateProject(&project); err != nil {
+						logger.Errorf("Failed to update project %v: %s", project.String(), err)
+					} else {
+						logger.Infof("Updated project %v - removed %d invalid groups, %d valid groups remain.", project.String(), len(badGroupIDs), len(goodGroupIDs))
+					}
 				}
 			} else {
-				if !slices.Contains(badGroupIDs, groupId) {
-					badGroupIDs = append(badGroupIDs, groupId)
-				}
-
-				if !slices.Contains(InvalidGroupIDs, groupId) {
-					InvalidGroupIDs = append(InvalidGroupIDs, groupId)
-				}
-			}
-		}
-
-		if len(badGroupIDs) > 0 {
-			fixedProjects++
-			logger.Warnf("Project %v contains %d valid groups and %d invalid groups.", project.String(), len(goodGroupIDs), len(badGroupIDs))
-			logger.Warnf("Invalid groups: %v", strings.Join(badGroupIDs, ", "))
-			if doUpdate && goOnline {
-				logger.Infof("Updating project to remove the invalid groups")
-				project.Groups = goodGroupIDs
-				if err = cx1client.UpdateProject(&project); err != nil {
-					logger.Errorf("Failed to update project %v: %s", project.String(), err)
-				} else {
-					logger.Infof("Updated project %v - removed %d invalid groups, %d valid groups remain.", project.String(), len(badGroupIDs), len(goodGroupIDs))
-				}
-			}
-		} else {
-			logger.Infof("Project %v contains %d valid groups and no invalid groups.", project.String(), len(goodGroupIDs))
-		}
-
-		if !*bulk {
-			logger.Infof("Pausing between projects - continue? [y/n]")
-			var str string
-			fmt.Scan(&str)
-			if !strings.EqualFold(str, "y") {
-				logger.Infof("Process terminated by user.")
-				break
+				logger.Infof("Project %v contains %d valid groups and no invalid groups.", project.String(), len(goodGroupIDs))
 			}
 
+			if !*bulk && *projectName == "" {
+				logger.Infof("Pausing between projects - continue? [y/n]")
+				var str string
+				fmt.Scan(&str)
+				if !strings.EqualFold(str, "y") {
+					logger.Infof("Process terminated by user.")
+					break
+				}
+
+			}
 		}
+	}
+
+	if *projectName != "" && checkedProjects == 0 {
+		logger.Errorf("No projects were found matching the name: %v", *projectName)
 	}
 
 	logger.Infof("Finished processing. %d of %d projects were found to include invalid groups. The following %d invalid groups were found:", fixedProjects, len(projects), len(InvalidGroupIDs))
