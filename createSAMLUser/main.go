@@ -1,95 +1,60 @@
 package main
 
 import (
-    "crypto/tls"
-    "flag"
-    "net/http"
-    "net/url"
-    "os"
+	"net/http"
+	"os"
 
-    // "fmt"
+	// "fmt"
 
-    "github.com/cxpsemea/Cx1ClientGo"
-    "github.com/sirupsen/logrus"
-    easy "github.com/t-tomalak/logrus-easy-formatter"
+	"github.com/cxpsemea/Cx1ClientGo"
+	"github.com/sirupsen/logrus"
+	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
 func main() {
-    logger := logrus.New()
-    logger.SetLevel(logrus.InfoLevel)
-    myformatter := &easy.Formatter{}
-    myformatter.TimestampFormat = "2006-01-02 15:04:05.000"
-    myformatter.LogFormat = "[%lvl%][%time%] %msg%\n"
-    logger.SetFormatter(myformatter)
-    logger.SetOutput(os.Stdout)
+	logger := logrus.New()
+	logger.SetLevel(logrus.InfoLevel)
+	myformatter := &easy.Formatter{}
+	myformatter.TimestampFormat = "2006-01-02 15:04:05.000"
+	myformatter.LogFormat = "[%lvl%][%time%] %msg%\n"
+	logger.SetFormatter(myformatter)
+	logger.SetOutput(os.Stdout)
 
-    logger.Info("Starting")
+	logger.Info("Starting")
+	logger.Info("This is just an example showing how to create a SAML user using the Cx1 client. The unique ID hardcoded in this example is for a specific user in my own Keycloak IdP and will not work for anyone else. The user details and unique ID should be replaced appropriately.")
 
-    Cx1URL := flag.String("cx1", "", "CheckmarxOne platform URL")
-    IAMURL := flag.String("iam", "", "CheckmarxOne IAM URL")
-    Tenant := flag.String("tenant", "", "CheckmarxOne tenant")
+	httpClient := &http.Client{}
 
-    APIKey := flag.String("apikey", "", "CheckmarxOne API Key (if not using client id/secret)")
-    ClientID := flag.String("client", "", "CheckmarxOne Client ID (if not using API Key)")
-    ClientSecret := flag.String("secret", "", "CheckmarxOne Client Secret (if not using API Key)")
+	var cx1client *Cx1ClientGo.Cx1Client
+	var err error
 
-    HTTPProxy := flag.String("proxy", "", "HTTP Proxy to use")
+	cx1client, err = Cx1ClientGo.NewClient(httpClient, logger)
 
-    flag.Parse()
+	if err != nil {
+		logger.Fatalf("Error creating client: %s", err)
+	}
 
-    httpClient := &http.Client{}
+	logger.Infof("Connected with %v", cx1client.String())
 
-    if *HTTPProxy != "" {
-        proxyURL, err := url.Parse(*HTTPProxy)
-        if err != nil {
-            logger.Fatalf("Failed to parse url: %v", proxyURL)
-        }
+	user, err := cx1client.GetUserByEmail("groucho@cx.local")
+	if err == nil {
+		logger.Infof("User groucho@cx.local already exists, deleting")
+		err = cx1client.DeleteUser(&user)
+		if err != nil {
+			logger.Errorf("Failed to delete user groucho: %s", err)
+		}
+	}
 
-        transport := &http.Transport{}
-        transport.Proxy = http.ProxyURL(proxyURL)
-        transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	user = Cx1ClientGo.User{
+		Enabled:   true,
+		FirstName: "Groucho",
+		LastName:  "Marx",
+		UserName:  "groucho",
+		Email:     "groucho@cx.local",
+	}
 
-        httpClient.Transport = transport
-    }
-
-    if *Cx1URL == "" || *IAMURL == "" || *Tenant == "" || (*APIKey == "" && *ClientID == "" && *ClientSecret == "") {
-        logger.Fatalf("Mandatory arguments are missing. Run with -h for a listing.")
-    }
-
-    var cx1client *Cx1ClientGo.Cx1Client
-    var err error
-
-    if *APIKey != "" {
-        cx1client, err = Cx1ClientGo.NewAPIKeyClient(httpClient, *Cx1URL, *IAMURL, *Tenant, *APIKey, logger)
-    } else {
-        cx1client, err = Cx1ClientGo.NewOAuthClient(httpClient, *Cx1URL, *IAMURL, *Tenant, *ClientID, *ClientSecret, logger)
-    }
-
-    if err != nil {
-        logger.Fatalf("Error creating client: %s", err)
-    }
-
-    logger.Infof("Connected with %v", cx1client.String())
-    
-    user, err := cx1client.GetUserByEmail( "groucho@cx.local" )
-    if err == nil {
-        logger.Infof( "User groucho@cx.local already exists, deleting" )
-        err = cx1client.DeleteUser( &user )
-        if err != nil {
-            logger.Errorf( "Failed to delete user groucho: %s", err )
-        }
-    }
-
-    user = Cx1ClientGo.User{
-        Enabled: true,
-        FirstName: "Groucho",
-        LastName: "Marx",
-        UserName: "groucho",
-        Email: "groucho@cx.local",
-    }
-    
-    user, err = cx1client.CreateSAMLUser( user, "dockerhost", "G-98cb32af-6f91-42fe-aad4-360c4420b8bb", "g-98cb32af-6f91-42fe-aad4-360c4420b8bb" )
-    if err != nil {
-        logger.Errorf( "Failed to create SAML user: %s", err )
-    }
+	user, err = cx1client.CreateSAMLUser(user, "dockerhost", "G-98cb32af-6f91-42fe-aad4-360c4420b8bb", "g-98cb32af-6f91-42fe-aad4-360c4420b8bb")
+	if err != nil {
+		logger.Errorf("Failed to create SAML user: %s", err)
+	}
 }
