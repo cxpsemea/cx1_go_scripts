@@ -125,7 +125,9 @@ func main() {
 		}
 
 		if len(names) == 0 {
-			logger.Errorf("Project %v is linked to %d applications, but none of these were found", project.String(), len(project.Applications))
+			if len(project.Applications) > 0 {
+				logger.Errorf("Project %v is linked to %d applications, but none of these were found", project.String(), len(project.Applications))
+			}
 		} else {
 			if *Sort {
 				slices.Sort(names)
