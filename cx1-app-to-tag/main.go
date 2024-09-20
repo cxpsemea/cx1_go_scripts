@@ -130,7 +130,7 @@ func main() {
 		}
 
 		if *MissingOnly && hasTagAlready {
-			logger.Infof("Skipping project because the 'missing' flag was set and this project already has a matching tag.")
+			logger.Infof(" - Skipping project because the 'missing' flag was set and this project already has a matching tag.")
 		} else {
 
 			for _, id := range project.Applications {
@@ -177,10 +177,10 @@ func main() {
 					if err = cx1client.UpdateProject(&project); err != nil {
 						logger.Errorf("Failed to update project %v with new application tags: %s", project.String(), err)
 					} else {
-						logger.Infof("Updated project %v with new application tags: %v", project.String(), project.Tags)
+						logger.Infof(" - Updated project %v with new application tags: %v", project.String(), project.Tags)
 					}
 				} else {
-					logger.Infof("Project %v required no changes.", project.String())
+					logger.Infof(" - Project %v required no changes.", project.String())
 				}
 			}
 		}
