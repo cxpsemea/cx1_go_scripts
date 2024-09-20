@@ -35,6 +35,7 @@ func main() {
 	SeparateTags := flag.Bool("separate", false, "If true: multiple tags named Key_1 ... Key_N will be set, one per application. If false: one tag will be used to store a comma-separated list of application names.")
 	Clean := flag.Bool("clean", false, "If true: previous tags matching the provided tag key will be removed, otherwise they will be left untouched but may be overwritten by new values.")
 	Change := flag.Bool("update", false, "No changes will be made unless this flag is set to true")
+	MissingOnly := flag.Bool("missing", false, "Update only the projects that are missing the tag - useful if errors caused a few to fail, use this flag to fill the gaps")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
@@ -65,6 +66,15 @@ func main() {
 
 	if *Clean {
 		logger.Infof("Previous tags with the key %v, or with a key matching %v_#, will be removed.", *TagName, *TagName)
+	}
+	if *MissingOnly {
+		logger.Infof("Will only update the projects that are missing the %v tag.", *TagName)
+		if *Clean {
+			logger.Errorf("The 'missing' tag is incompatible with the 'clean' tag - disabling 'clean'")
+			*Clean = false
+		}
+	} else {
+		logger.Infof("Will update all projects.")
 	}
 
 	if *Change {
@@ -105,64 +115,73 @@ func main() {
 		names := []string{}
 		changed := false
 
-		if *Clean {
-			for key := range project.Tags {
-				if key == *TagName || keyRE.MatchString(key) {
+		hasTagAlready := false
+
+		for key := range project.Tags {
+			if key == *TagName || keyRE.MatchString(key) {
+				if *Clean {
 					logger.Infof(" - Removing existing tag: %v = %v", key, project.Tags[key])
 					delete(project.Tags, key)
 					changed = true
 				}
+
+				hasTagAlready = true
 			}
 		}
 
-		for _, id := range project.Applications {
-			if val, ok := AppsByID[id]; ok {
-				names = append(names, val.Name)
-				changed = true
-			} else {
-				logger.Errorf("Project %v is linked to unknown application with ID %v", project.String(), id)
-			}
-		}
-
-		if len(names) == 0 {
-			if len(project.Applications) > 0 {
-				logger.Errorf("Project %v is linked to %d applications, but none of these were found", project.String(), len(project.Applications))
-			}
+		if *MissingOnly && hasTagAlready {
+			logger.Infof("Skipping project because the 'missing' flag was set and this project already has a matching tag.")
 		} else {
-			if *Sort {
-				slices.Sort(names)
+
+			for _, id := range project.Applications {
+				if val, ok := AppsByID[id]; ok {
+					names = append(names, val.Name)
+					changed = true
+				} else {
+					logger.Errorf("Project %v is linked to unknown application with ID %v", project.String(), id)
+				}
 			}
 
-			max := len(names)
-			if max > *MaxApps && *MaxApps != 0 {
-				max = *MaxApps
-				names = names[:max]
-			}
+			if len(names) == 0 {
+				if len(project.Applications) > 0 {
+					logger.Errorf("Project %v is linked to %d applications, but none of these were found", project.String(), len(project.Applications))
+				}
+			} else {
+				if *Sort {
+					slices.Sort(names)
+				}
 
-			if *SeparateTags {
-				for i := 0; i < max; i++ {
-					tagKey := fmt.Sprintf("%v_%d", *TagName, i+1)
-					project.Tags[tagKey] = names[i]
-					logger.Infof(" - Adding new tag: %v = %v", tagKey, names[i])
+				max := len(names)
+				if max > *MaxApps && *MaxApps != 0 {
+					max = *MaxApps
+					names = names[:max]
+				}
+
+				if *SeparateTags {
+					for i := 0; i < max; i++ {
+						tagKey := fmt.Sprintf("%v_%d", *TagName, i+1)
+						project.Tags[tagKey] = names[i]
+						logger.Infof(" - Adding new tag: %v = %v", tagKey, names[i])
+						changed = true
+					}
+				} else {
+					tagValue := strings.Join(names, ",")
+					project.Tags[*TagName] = tagValue
+					logger.Infof(" - Adding new tag: %v = %v", *TagName, tagValue)
 					changed = true
 				}
-			} else {
-				tagValue := strings.Join(names, ",")
-				project.Tags[*TagName] = tagValue
-				logger.Infof(" - Adding new tag: %v = %v", *TagName, tagValue)
-				changed = true
 			}
-		}
 
-		if *Change {
-			if changed {
-				if err = cx1client.UpdateProject(&project); err != nil {
-					logger.Errorf("Failed to update project %v with new application tags: %s", project.String(), err)
+			if *Change {
+				if changed {
+					if err = cx1client.UpdateProject(&project); err != nil {
+						logger.Errorf("Failed to update project %v with new application tags: %s", project.String(), err)
+					} else {
+						logger.Infof("Updated project %v with new application tags: %v", project.String(), project.Tags)
+					}
 				} else {
-					logger.Infof("Updated project %v with new application tags: %v", project.String(), project.Tags)
+					logger.Infof("Project %v required no changes.", project.String())
 				}
-			} else {
-				logger.Infof("Project %v required no changes.", project.String())
 			}
 		}
 	}
