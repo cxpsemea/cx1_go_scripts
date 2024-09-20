@@ -172,17 +172,20 @@ func main() {
 				}
 			}
 
-			if *Change {
-				if changed {
+			if changed {
+				if *Change {
 					if err = cx1client.UpdateProject(&project); err != nil {
 						logger.Errorf("Failed to update project %v with new application tags: %s", project.String(), err)
 					} else {
 						logger.Infof(" - Updated project %v with new application tags: %v", project.String(), project.Tags)
 					}
 				} else {
-					logger.Infof(" - Project %v required no changes.", project.String())
+					logger.Infof(" - Not applying changes, use --update to apply.")
 				}
+			} else {
+				logger.Infof(" - Project %v required no changes.", project.String())
 			}
+
 		}
 	}
 

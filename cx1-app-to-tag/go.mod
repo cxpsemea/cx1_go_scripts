@@ -17,5 +17,3 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 )
-
-//replace github.com/cxpsemea/Cx1ClientGo v0.0.72 => c:/work/code/cx1clientgo
