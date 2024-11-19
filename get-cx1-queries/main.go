@@ -121,24 +121,28 @@ func main() {
 		Project     QueryInfo `json:"Project"`
 	}
 	var Output struct {
-		Language map[string]map[string]QueryLevels `json:"languages"`
+		Language map[string]map[string]map[string]QueryLevels `json:"languages"`
 	}
 
-	Output.Language = make(map[string]map[string]QueryLevels)
+	Output.Language = make(map[string]map[string]map[string]QueryLevels)
 
 	cqc = qc.GetCustomQueryCollection()
 	logger.Infof("Project %v has the following custom queries in scope", testProject.String())
 	for lid := range cqc.QueryLanguages {
 		lang := cqc.QueryLanguages[lid].Name
 		if _, ok := Output.Language[lang]; !ok {
-			Output.Language[lang] = make(map[string]QueryLevels)
+			Output.Language[lang] = make(map[string]map[string]QueryLevels)
 		}
 		for gid := range cqc.QueryLanguages[lid].QueryGroups {
+			group := cqc.QueryLanguages[lid].QueryGroups[gid].Name
+			if _, ok := Output.Language[lang][group]; !ok {
+				Output.Language[lang][group] = make(map[string]QueryLevels)
+			}
 			for _, q := range cqc.QueryLanguages[lid].QueryGroups[gid].Queries {
 				logger.Infof("[%v] %v -> %v -> %v", q.Level, q.Language, q.Group, q.Name)
 
 				var query QueryLevels
-				if val, ok := Output.Language[q.Language][q.Group]; ok {
+				if val, ok := Output.Language[q.Language][q.Group][q.Name]; ok {
 					query = val
 				}
 
@@ -154,7 +158,7 @@ func main() {
 					query.Project.Severity = q.Severity
 				}
 
-				Output.Language[q.Language][q.Group] = query
+				Output.Language[q.Language][q.Group][q.Name] = query
 			}
 		}
 	}
