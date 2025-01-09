@@ -44,10 +44,10 @@ func main() {
 			actualTime := time.Unix(int64(c.ClientSecretExpiry), 0)
 			if actualTime.After(time.Now()) {
 				diff := time.Until(actualTime).Hours() / 24.0
-				logger.Infof("Client %v set to expire after %d days (%v => in %f days)", c.String(), c.SecretExpirationDays, actualTime, diff)
+				logger.Infof("Client %v set to expire after %d days (%v => in %.0f days)", c.String(), c.SecretExpirationDays, actualTime, diff)
 			} else {
 				diff := time.Since(actualTime).Hours() / 24.0
-				logger.Infof("Client %v set to expire after %d days (%v => %f days ago)", c.String(), c.SecretExpirationDays, actualTime, diff)
+				logger.Infof("Client %v set to expire after %d days (%v => %.0f days ago)", c.String(), c.SecretExpirationDays, actualTime, diff)
 			}
 			if *DoUpdate {
 				c.SecretExpirationDays = *MinimumExpiry
