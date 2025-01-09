@@ -4,6 +4,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/sirupsen/logrus"
@@ -40,7 +41,14 @@ func main() {
 
 	for _, c := range clients {
 		if c.Creator != "" && c.SecretExpirationDays > *MinimumExpiry {
-			logger.Infof("Client %v expires in %d days", c.String(), c.SecretExpirationDays)
+			actualTime := time.Unix(int64(c.ClientSecretExpiry), 0)
+			if actualTime.After(time.Now()) {
+				diff := time.Until(actualTime).Hours() / 24.0
+				logger.Infof("Client %v set to expire after %d days (%v => in %f days)", c.String(), c.SecretExpirationDays, actualTime, diff)
+			} else {
+				diff := time.Since(actualTime).Hours() / 24.0
+				logger.Infof("Client %v set to expire after %d days (%v => %f days ago)", c.String(), c.SecretExpirationDays, actualTime, diff)
+			}
 			if *DoUpdate {
 				c.SecretExpirationDays = *MinimumExpiry
 				if err := cx1client.UpdateClient(c); err != nil {
