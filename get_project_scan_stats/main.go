@@ -78,6 +78,7 @@ func main() {
 
 	logger.Infof("Writing projects to projects.csv")
 	projectsFile.WriteString("sep=;\n")
+	projectsFile.WriteString("Date;# Projects Created;\n")
 	for _, date := range dates {
 		count := projectsCreated[date]
 		_, err := projectsFile.WriteString(fmt.Sprintf("%v;%d;\n", date, count))
@@ -112,11 +113,12 @@ func main() {
 
 	logger.Infof("Writing scans to scans.csv")
 	scansFile.WriteString("sep=;\n")
+	scansFile.WriteString("Date;# Scans Started;\n")
 	for _, date := range dates {
 		count := scansCreated[date]
 		_, err := scansFile.WriteString(fmt.Sprintf("%v;%d;\n", date, count))
 		if err != nil {
-			logger.Fatalf("Failed to write project data to file: %s", err)
+			logger.Fatalf("Failed to write scan data to file: %s", err)
 		}
 	}
 
