@@ -58,6 +58,11 @@ func main() {
 		scansCreated[curDate] = 0
 	}
 
+	p := cx1client.GetPaginationSettings()
+	p.Scans = 1000
+	p.Projects = 1000
+	cx1client.SetPaginationSettings(p)
+
 	logger.Infof("Retrieving a list of projects")
 	projects, err := cx1client.GetAllProjects()
 	if err != nil {
@@ -89,7 +94,6 @@ func main() {
 
 	logger.Infof("Retrieving last %d days of scans (since %v)", *DaysBack, startTime)
 
-	p := cx1client.GetPaginationSettings()
 	filter := Cx1ClientGo.ScanFilter{
 		FromDate: startTime,
 		BaseFilter: Cx1ClientGo.BaseFilter{
