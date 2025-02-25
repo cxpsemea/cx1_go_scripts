@@ -134,6 +134,22 @@ func main() {
 		role2, err2 := cx1client2.GetRoleByName(r)
 
 		if err1 == nil && err2 == nil {
+			if role1.Composite {
+				subroles, err := cx1client1.GetRoleComposites(&role1)
+				if err != nil {
+					logger.Errorf("Failed to get sub-roles for %v role %v: %s", *Tenant1, role1.String(), err)
+				}
+				role1.SubRoles = subroles
+			}
+
+			if role2.Composite {
+				subroles, err := cx1client2.GetRoleComposites(&role2)
+				if err != nil {
+					logger.Errorf("Failed to get sub-roles for %v role %v: %s", *Tenant2, role2.String(), err)
+				}
+				role2.SubRoles = subroles
+			}
+
 			if compareRoles(*Tenant1, role1, *Tenant2, role2, logger) {
 				logger.Infof("Role %v is the same between %v and %v", r, *Tenant1, *Tenant2)
 			} else {
@@ -178,6 +194,11 @@ func compareRoles(tenant1 string, role1 Cx1ClientGo.Role, tenant2 string, role2 
 			logger.Errorf("Role %v in %v contains sub-role %v while role %v in %v does not", role2.String(), tenant2, r, role1.String(), tenant1)
 			same = false
 		}
+	}
+
+	if same {
+		slices.Sort(r1)
+		logger.Infof("Role %v contains sub-roles: %v", role1.Name, strings.Join(r1, ", "))
 	}
 
 	return same
