@@ -1,4 +1,4 @@
-module github.com/cxpsemea/cx1_go_scripts/cx1_groups_testing
+module github.com/cxpsemea/cx1_go_scripts/cx1_compare_envs
 
 go 1.23.3
 
