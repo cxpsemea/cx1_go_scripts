@@ -18,6 +18,10 @@ import (
 )
 
 func main() {
+	os.Exit(mainRunner())
+}
+
+func mainRunner() int {
 	logger := logrus.New()
 	logger.SetLevel(logrus.InfoLevel)
 	myformatter := &easy.Formatter{}
@@ -129,6 +133,8 @@ func main() {
 
 	rolesToCheck := strings.Split(*Roles, ",")
 
+	diffs := 0
+
 	for _, r := range rolesToCheck {
 		role1, err1 := cx1client1.GetRoleByName(r)
 		role2, err2 := cx1client2.GetRoleByName(r)
@@ -154,6 +160,7 @@ func main() {
 				logger.Infof("Role %v is the same between %v and %v", r, *Tenant1, *Tenant2)
 			} else {
 				logger.Errorf("Role %v is different between %v and %v", r, *Tenant1, *Tenant2)
+				diffs++
 			}
 		} else if err1 != nil && err2 != nil {
 			logger.Warnf("Failed to get role %v from both %v and %v", r, *Tenant1, *Tenant2)
@@ -163,8 +170,11 @@ func main() {
 			} else {
 				logger.Errorf("Role %v exists in %v but not in %v", r, *Tenant1, *Tenant2)
 			}
+			diffs++
 		}
 	}
+
+	return diffs
 }
 
 func compareRoles(tenant1 string, role1 Cx1ClientGo.Role, tenant2 string, role2 Cx1ClientGo.Role, logger *logrus.Logger) bool {
