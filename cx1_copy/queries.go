@@ -152,6 +152,7 @@ func makeZip(zipContents *[]byte, language string) ([]byte, error) {
 
 	zipWriter := zip.NewWriter(contents)
 
+	included_files := 0
 	// Read all the files from zip archive
 	for _, zipFile := range zipReader.File {
 		if languageMap[zipFile.Name] == language {
@@ -173,9 +174,13 @@ func makeZip(zipContents *[]byte, language string) ([]byte, error) {
 			if _, err := io.Copy(w1, bytes.NewReader(unzippedFileBytes)); err != nil {
 				return contents.Bytes(), err
 			}
+			included_files++
 		}
 	}
 
 	zipWriter.Close()
+	if included_files == 0 {
+		return []byte{}, fmt.Errorf("no files found for language %v", language)
+	}
 	return contents.Bytes(), nil
 }

@@ -146,6 +146,7 @@ func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.L
 	var err error
 	var cqc Cx1ClientGo.QueryCollection
 	var data []byte
+	InitializeQueryMigration(cx1client1)
 
 	if data, err = os.ReadFile("queries.json"); err != nil {
 		logger.Infof("Fetching queries from %v", cx1client1.String())
@@ -159,7 +160,7 @@ func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.L
 		for _, lang := range collection.QueryLanguages {
 			logger.Infof("Fetching %v-language queries", lang.Name)
 			if err := refreshAuditSession(cx1client1, lang.Name); err != nil {
-				logger.Fatalf("Failed to refresh audit session: %v", err)
+				logger.Errorf("Failed to refresh audit session: %v", err)
 			} else {
 				aq, err := cx1client1.GetAuditQueriesByLevelID(auditSession, cx1client1.QueryTypeProject(), testProject.ProjectID)
 				if err != nil {
