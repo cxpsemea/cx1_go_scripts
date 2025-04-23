@@ -17,6 +17,8 @@ import (
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
+var oldAPI bool = false
+
 func main() {
 	os.Exit(mainRunner())
 }
@@ -144,56 +146,115 @@ func mainRunner() int {
 
 func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.Logger) {
 	var err error
-	var cqc Cx1ClientGo.QueryCollection
+	var srcQColl Cx1ClientGo.QueryCollection
 	var data []byte
 	InitializeQueryMigration(cx1client1)
 
-	if data, err = os.ReadFile("queries.json"); err != nil {
-		logger.Infof("Fetching queries from %v", cx1client1.String())
+	if data, err = os.ReadFile("src-queries.json"); err != nil {
+		srcQColl = getCollection(cx1client1, logger)
 
-		var collection Cx1ClientGo.QueryCollection
-		collection, err = cx1client1.GetQueries()
-		if err != nil {
-			logger.Fatalf("Failed to fetch queries from %v: %s", cx1client1.String(), err)
-		}
-
-		for _, lang := range collection.QueryLanguages {
-			logger.Infof("Fetching %v-language queries", lang.Name)
-			if err := refreshAuditSession(cx1client1, lang.Name); err != nil {
-				logger.Errorf("Failed to refresh audit session: %v", err)
-			} else {
-				aq, err := cx1client1.GetAuditQueriesByLevelID(auditSession, cx1client1.QueryTypeProject(), testProject.ProjectID)
-				if err != nil {
-					logger.Errorf("Failed to get query code for Project-level %v queries for project %v: %s", lang.Name, testProject.String(), err)
-				} else {
-					collection.AddQueries(&aq)
-				}
-			}
-		}
-
-		if auditSession != nil {
-			deleteAuditSession(cx1client1, logger)
-		}
-
-		cqc = collection.GetCustomQueryCollection()
-
-		data, err = json.MarshalIndent(cqc, "", "  ")
+		data, err = json.MarshalIndent(srcQColl, "", "  ")
 		if err != nil {
 			logger.Errorf("Failed to marshal data to json: %v", err)
 			return
 		}
-		err = os.WriteFile("queries.json", data, 0644)
+		err = os.WriteFile("src-queries.json", data, 0644)
 		if err != nil {
 			logger.Errorf("Failed to write data to file: %v", err)
 			return
 		}
-		logger.Infof("Saved query collection to queries.json")
+		logger.Infof("Saved query collection to src-queries.json")
 	} else {
-		logger.Infof("Loading queries from queries.json")
-		err = json.Unmarshal(data, &cqc)
+		logger.Infof("Loading queries from src-queries.json")
+		err = json.Unmarshal(data, &srcQColl)
 		if err != nil {
 			logger.Errorf("Failed to unmarshal data from json: %v", err)
 			return
 		}
 	}
+
+	var dstQColl Cx1ClientGo.QueryCollection
+	if data, err = os.ReadFile("dest-queries.json"); err != nil {
+		dstQColl = getCollection(cx1client2, logger)
+
+		data, err = json.MarshalIndent(dstQColl, "", "  ")
+		if err != nil {
+			logger.Errorf("Failed to marshal data to json: %v", err)
+			return
+		}
+		err = os.WriteFile("dest-queries.json", data, 0644)
+		if err != nil {
+			logger.Errorf("Failed to write data to file: %v", err)
+			return
+		}
+		logger.Infof("Saved query collection to dest-queries.json")
+	} else {
+		logger.Infof("Loading queries from dest-queries.json")
+		err = json.Unmarshal(data, &dstQColl)
+		if err != nil {
+			logger.Errorf("Failed to unmarshal data from json: %v", err)
+			return
+		}
+	}
+
+	// so now we have the whole custom query collection
+	// copy them to the second tenant
+
+	oldAPI, _ = cx1client2.CheckFlag("QUERY_EDITOR_SAST_BACKWARD_API_ENABLED")
+
+	for _, lang := range srcQColl.QueryLanguages {
+		for _, group := range lang.QueryGroups {
+			for _, query := range group.Queries {
+				if query.Custom {
+					if query.Level == cx1client1.QueryTypeProduct() {
+						if err := migrateQuery(cx1client2, cx1client2.QueryTypeProduct(), query, logger); err != nil {
+							logger.Errorf("Failed to migrate query %v: %s", query.String(), err)
+						} else {
+							logger.Infof("Migrated query %v", query.String())
+						}
+					} else if query.Level == cx1client1.QueryTypeTenant() {
+						if err := migrateQuery(cx1client2, cx1client2.QueryTypeTenant(), query, logger); err != nil {
+							logger.Errorf("Failed to migrate query %v: %s", query.String(), err)
+						} else {
+							logger.Infof("Migrated query %v", query.String())
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func migrateQuery(cx1client *Cx1ClientGo.Cx1Client, level string, query Cx1ClientGo.Query, logger *logrus.Logger) error {
+	return nil
+}
+
+func getCollection(cx1client *Cx1ClientGo.Cx1Client, logger *logrus.Logger) Cx1ClientGo.QueryCollection {
+	var err error
+	logger.Infof("Fetching queries from %v", cx1client.String())
+
+	var collection Cx1ClientGo.QueryCollection
+	collection, err = cx1client.GetQueries()
+	if err != nil {
+		logger.Fatalf("Failed to fetch queries from %v: %s", cx1client.String(), err)
+	}
+
+	for _, lang := range collection.QueryLanguages {
+		logger.Infof("Fetching %v-language queries", lang.Name)
+		if err := refreshAuditSession(cx1client, lang.Name, logger); err != nil {
+			logger.Errorf("Failed to refresh audit session: %v", err)
+		} else {
+			aq, err := cx1client.GetAuditQueriesByLevelID(auditSession, cx1client.QueryTypeProject(), testProject.ProjectID)
+			if err != nil {
+				logger.Errorf("Failed to get query code for Project-level %v queries for project %v: %s", lang.Name, testProject.String(), err)
+			} else {
+				collection.AddQueries(&aq)
+			}
+		}
+	}
+
+	if auditSession != nil {
+		deleteAuditSession(cx1client, logger)
+	}
+	return collection.GetCustomQueryCollection()
 }

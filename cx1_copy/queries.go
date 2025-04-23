@@ -14,7 +14,7 @@ var auditSession *Cx1ClientGo.AuditSession
 var testProject *Cx1ClientGo.Project
 var languageMap map[string]string
 
-func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
+func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string, logger *logrus.Logger) error {
 	if auditSession != nil && auditSession.HasLanguage(language) {
 		if err := cx1client.AuditSessionKeepAlive(auditSession); err != nil {
 			_ = cx1client.AuditDeleteSession(auditSession)
@@ -23,6 +23,10 @@ func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) erro
 			}
 		}
 	} else {
+
+		if auditSession != nil {
+			deleteAuditSession(cx1client, logger)
+		}
 		if err := createAuditSession(cx1client, language); err != nil {
 			return err
 		}
