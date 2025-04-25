@@ -10,52 +10,70 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var auditSession *Cx1ClientGo.AuditSession
-var testProject *Cx1ClientGo.Project
+var auditSessions map[*Cx1ClientGo.Cx1Client]*Cx1ClientGo.AuditSession = make(map[*Cx1ClientGo.Cx1Client]*Cx1ClientGo.AuditSession)
+
+var testProjects map[*Cx1ClientGo.Cx1Client]*Cx1ClientGo.Project = make(map[*Cx1ClientGo.Cx1Client]*Cx1ClientGo.Project)
+
 var languageMap map[string]string
 
 func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string, logger *logrus.Logger) error {
-	if auditSession != nil && auditSession.HasLanguage(language) {
+	var auditSession *Cx1ClientGo.AuditSession
+	var ok bool
+
+	if auditSession, ok = auditSessions[cx1client]; ok && auditSession != nil && auditSession.HasLanguage(language) {
 		if err := cx1client.AuditSessionKeepAlive(auditSession); err != nil {
 			_ = cx1client.AuditDeleteSession(auditSession)
 			if err = createAuditSession(cx1client, language); err != nil {
 				return err
 			}
+			auditSession = auditSessions[cx1client]
 		}
 	} else {
-
 		if auditSession != nil {
 			deleteAuditSession(cx1client, logger)
 		}
 		if err := createAuditSession(cx1client, language); err != nil {
 			return err
 		}
+		auditSession = auditSessions[cx1client]
 	}
 
-	cx1client.GetAuditQueriesByLevelID(auditSession, "Corp", "Corp")
+	cx1client.GetAuditSASTQueriesByLevelID(auditSession, "Corp", "Corp")
 
 	return cx1client.AuditSessionKeepAlive(auditSession)
 }
 
 func deleteAuditSession(cx1client *Cx1ClientGo.Cx1Client, logger *logrus.Logger) {
-	if auditSession == nil {
+	var auditSession *Cx1ClientGo.AuditSession
+	var ok bool
+
+	auditSession, ok = auditSessions[cx1client]
+
+	if !ok || auditSession == nil {
 		return
 	}
+
+	logger.Infof("Deleting audit session with ID: %v", auditSession.ID)
 
 	if err := cx1client.AuditDeleteSession(auditSession); err != nil {
 		logger.Errorf("Failed to delete audit session: %s", err)
 	}
 	auditSession = nil
+	auditSessions[cx1client] = nil
 }
 
 func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
 	var err error
-	if testProject == nil {
+	var testProject *Cx1ClientGo.Project
+	var ok bool
+	testProject, ok = testProjects[cx1client]
+	if !ok || testProject == nil {
 		project, err := cx1client.GetOrCreateProjectByName("CxPSEMEA-Query Migration Project")
 		if err != nil {
 			return err
 		}
 		testProject = &project
+		testProjects[cx1client] = testProject
 	}
 
 	filter := Cx1ClientGo.ScanFilter{
@@ -109,7 +127,7 @@ func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error
 		return err
 	}
 
-	auditSession = &session
+	auditSessions[cx1client] = &session
 
 	return nil
 }
