@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -100,7 +99,7 @@ func ProcessApplicationTriage(cx1client *Cx1ClientGo.Cx1Client, application stri
 				logger.Errorf("Failed to get project %v for application %v: %v", projID, app.String(), err)
 			} else {
 				if err := processProject(cx1client, proj, applyChange, logger); err != nil {
-					logger.Errorf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
+					logger.Warnf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
 				}
 			}
 		}
@@ -130,7 +129,8 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 		return err
 	}
 	if len(last_scan) == 0 {
-		return fmt.Errorf("project %v has no successful SAST scans", project.String())
+		logger.Infof("Project %v has no successful SAST scans and will be skipped", project.String())
+		return nil
 	}
 
 	results, err := cx1client.GetAllScanResultsByID(last_scan[0].ScanID)
@@ -146,7 +146,7 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 	for _, result := range results.SAST {
 		lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
 		if err != nil {
-			logger.Errorf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
+			logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
 		} else {
 			if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
 				continue
