@@ -340,7 +340,15 @@ func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.L
 func createOverride(cx1client2 *Cx1ClientGo.Cx1Client, query Cx1ClientGo.SASTQuery, query2 *Cx1ClientGo.SASTQuery, logger *logrus.Logger) (*Cx1ClientGo.SASTQuery, error) {
 	if query2 == nil {
 		logger.Infof("Creating new query %v", query.StringDetailed())
-		new_query, _, err := cx1client2.CreateNewSASTQuery(auditSessions[cx1client2], query)
+		new_query := query
+		if new_query.CweID < 0 {
+			new_query.CweID = 0
+		}
+		if new_query.QueryDescriptionId < 0 {
+			new_query.QueryDescriptionId = 0
+		}
+
+		new_query, _, err := cx1client2.CreateNewSASTQuery(auditSessions[cx1client2], new_query)
 		if err != nil {
 			return &new_query, err
 		}
