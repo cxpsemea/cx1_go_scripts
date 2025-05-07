@@ -299,7 +299,8 @@ func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.L
 									}
 								} else {
 									if query1.Source != query2.Source {
-										_, _, err = cx1client2.UpdateSASTQuerySourceByKey(auditSessions[cx1client2], query2.EditorKey, query1.Source)
+										query2.Source = query1.Source
+										_, _, err = cx1client2.UpdateSASTQuerySource(auditSessions[cx1client2], query2, query1.Source)
 										if err != nil {
 											logger.Errorf("Failed to update query source %v in %v: %v", query2.StringDetailed(), cx1client2.String(), err)
 											continue
@@ -307,7 +308,8 @@ func CopyQueries(cx1client1, cx1client2 *Cx1ClientGo.Cx1Client, logger *logrus.L
 									}
 
 									if query1.Severity != query2.Severity {
-										_, err = cx1client2.UpdateSASTQueryMetadataByKey(auditSessions[cx1client2], query2.EditorKey, query1.GetMetadata())
+										query2.Severity = query1.Severity
+										_, err = cx1client2.UpdateSASTQueryMetadata(auditSessions[cx1client2], query2, query1.GetMetadata())
 										if err != nil {
 											logger.Errorf("Failed to update query metadata %v in %v: %v", query2.StringDetailed(), cx1client2.String(), err)
 											continue
@@ -344,7 +346,7 @@ func createOverride(cx1client2 *Cx1ClientGo.Cx1Client, query Cx1ClientGo.SASTQue
 		}
 
 		if new_query.Severity != query.Severity {
-			new_query, err = cx1client2.UpdateSASTQueryMetadata(auditSessions[cx1client2], &new_query, query.GetMetadata())
+			new_query, err = cx1client2.UpdateSASTQueryMetadata(auditSessions[cx1client2], new_query, query.GetMetadata())
 			if err != nil {
 				return &new_query, err
 			}
@@ -363,13 +365,13 @@ func createOverride(cx1client2 *Cx1ClientGo.Cx1Client, query Cx1ClientGo.SASTQue
 				return nil, err
 			}
 			if new_query.Source != query.Source {
-				new_query, _, err = cx1client2.UpdateSASTQuerySource(auditSessions[cx1client2], &new_query, query.Source)
+				new_query, _, err = cx1client2.UpdateSASTQuerySource(auditSessions[cx1client2], new_query, query.Source)
 				if err != nil {
 					return &new_query, err
 				}
 			}
 			if new_query.Severity != query.Severity {
-				new_query, err = cx1client2.UpdateSASTQueryMetadata(auditSessions[cx1client2], &new_query, query.GetMetadata())
+				new_query, err = cx1client2.UpdateSASTQueryMetadata(auditSessions[cx1client2], new_query, query.GetMetadata())
 				if err != nil {
 					return &new_query, err
 				}
