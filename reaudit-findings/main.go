@@ -16,7 +16,7 @@ import (
 
 func main() {
 	logger := logrus.New()
-	logger.SetLevel(logrus.InfoLevel)
+	logger.SetLevel(logrus.TraceLevel)
 	myformatter := &easy.Formatter{}
 	myformatter.TimestampFormat = "2006-01-02 15:04:05.000"
 	myformatter.LogFormat = "[%lvl%][%time%] %msg%\n"
@@ -132,6 +132,7 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 					} else {
 
 						predicate.State = lastPredicate.State
+						predicate.Comment = lastPredicate.Comment
 						if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
 							logger.Errorf("Failed to update project %v result %v back to %v: %v", project.String(), result.String(), lastPredicate.State, err)
 							errCount++
