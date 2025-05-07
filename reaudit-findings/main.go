@@ -138,7 +138,6 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 		return err
 	}
 
-	logger.Infof("Got %d SAST results", len(results.SAST))
 	updatedCount := 0
 	errCount := 0
 	inScope := 0
