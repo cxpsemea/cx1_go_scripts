@@ -39,12 +39,36 @@ func main() {
 	Project := flag.String("proj", "", "Optional: Name of project to process")
 	ApplyChange := flag.Bool("update", false, "Set this to true to actually apply changes, otherwise simply inform")
 	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
+	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
 		logger.Fatalf("Error creating client: %s", err)
 	}
 	logger.Infof("Connected with: %v", cx1client.String())
+
+	switch strings.ToUpper(*LogLevel) {
+	case "TRACE":
+		logger.Info("Setting log level to TRACE")
+		logger.SetLevel(logrus.TraceLevel)
+	case "DEBUG":
+		logger.Info("Setting log level to DEBUG")
+		logger.SetLevel(logrus.DebugLevel)
+	case "INFO":
+		logger.Info("Setting log level to INFO")
+		logger.SetLevel(logrus.InfoLevel)
+	case "WARNING":
+		logger.Info("Setting log level to WARNING")
+		logger.SetLevel(logrus.WarnLevel)
+	case "ERROR":
+		logger.Info("Setting log level to ERROR")
+		logger.SetLevel(logrus.ErrorLevel)
+	case "FATAL":
+		logger.Info("Setting log level to FATAL")
+		logger.SetLevel(logrus.FatalLevel)
+	default:
+		logger.Info("Log level set to default: INFO")
+	}
 
 	if *CommentText != "" {
 		PNEComment = *CommentText
