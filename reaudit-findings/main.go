@@ -12,6 +12,8 @@ import (
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
+var PNEComment = ""
+
 func main() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.TraceLevel)
@@ -36,12 +38,17 @@ func main() {
 	Application := flag.String("app", "", "Optional: Name of application to process")
 	Project := flag.String("proj", "", "Optional: Name of project to process")
 	ApplyChange := flag.Bool("update", false, "Set this to true to actually apply changes, otherwise simply inform")
+	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
 		logger.Fatalf("Error creating client: %s", err)
 	}
 	logger.Infof("Connected with: %v", cx1client.String())
+
+	if *CommentText != "" {
+		PNEComment = *CommentText
+	}
 
 	if *Application != "" {
 		err := ProcessApplicationTriage(cx1client, *Application, *ApplyChange, logger)
@@ -124,6 +131,9 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 				if applyChange {
 					predicate := result.CreateResultsPredicate(project.ProjectID, last_scan[0].ScanID)
 					predicate.State = "PROPOSED_NOT_EXPLOITABLE"
+					if PNEComment != "" {
+						predicate.Comment = PNEComment
+					}
 					if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
 						logger.Errorf("Failed to update project %v result %v to PNE (temporary): %v", project.String(), result.String(), err)
 						errCount++
