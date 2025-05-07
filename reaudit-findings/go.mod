@@ -1,4 +1,4 @@
-module github.com/cxpsemea/cx1_go_scripts/cx1_copy
+module github.com/cxpsemea/cx1_go_scripts/reaudit-findings
 
 go 1.23.3
 
@@ -15,4 +15,4 @@ require (
 	golang.org/x/sys v0.32.0 // indirect
 )
 
-//replace github.com/cxpsemea/Cx1ClientGo v0.1.1-0.20250408093420-5ee025b5ab2d => c:/work/code/cx1clientgo
+//replace github.com/cxpsemea/Cx1ClientGo v0.1.1-0.20250430143455-520fe9c4c81e => c:/work/code/cx1clientgo
