@@ -73,10 +73,10 @@ func ProcessApplicationTriage(cx1client *Cx1ClientGo.Cx1Client, application stri
 	} else {
 		for _, projID := range app.ProjectIds {
 			if proj, err := cx1client.GetProjectByID(projID); err != nil {
-				return err
+				logger.Errorf("Failed to get project %v for application %v: %v", projID, app.String(), err)
 			} else {
 				if err := processProject(cx1client, proj, applyChange, logger); err != nil {
-					return err
+					logger.Errorf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
 				}
 			}
 		}
