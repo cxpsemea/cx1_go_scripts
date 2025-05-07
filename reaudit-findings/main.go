@@ -1,11 +1,9 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 
@@ -26,14 +24,14 @@ func main() {
 	logger.Info("Starting")
 
 	httpClient := &http.Client{}
-	if true {
+	/*if true {
 		proxyURL, _ := url.Parse("http://127.0.0.1:8080")
 		transport := &http.Transport{}
 		transport.Proxy = http.ProxyURL(proxyURL)
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		httpClient.Transport = transport
 		logger.Infof("Using proxy: %v", proxyURL.String())
-	}
+	}*/
 
 	Application := flag.String("app", "", "Optional: Name of application to process")
 	Project := flag.String("proj", "", "Optional: Name of project to process")
