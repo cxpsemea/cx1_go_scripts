@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 )
 
 var PNEComment = ""
+var HistorySearch = false
 
 func main() {
 	logger := logrus.New()
@@ -39,6 +41,7 @@ func main() {
 	ApplyChange := flag.Bool("update", false, "Set this to true to actually apply changes, otherwise simply inform")
 	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
 	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
+	History := flag.Bool("history", false, "Optional: analyze the full predicate history (otherwise check only the latest predicate for 'importer' user)")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
@@ -73,6 +76,8 @@ func main() {
 		PNEComment = *CommentText
 	}
 
+	HistorySearch = *History
+
 	if *Application != "" {
 		err := ProcessApplicationTriage(cx1client, *Application, *ApplyChange, logger)
 		if err != nil {
@@ -95,8 +100,8 @@ func ProcessApplicationTriage(cx1client *Cx1ClientGo.Cx1Client, application stri
 		return err
 	} else {
 		for id, projID := range app.ProjectIds {
-			if id%10 == 0 {
-				logger.Infof("Progress: %d/%d", id, len(app.ProjectIds))
+			if id%10 == 0 && id != 0 {
+				logger.Infof("Progress: project %d of %d", id, len(app.ProjectIds))
 			}
 			if proj, err := cx1client.GetProjectByID(projID); err != nil {
 				logger.Errorf("Failed to get project %v for application %v: %v", projID, app.String(), err)
@@ -146,36 +151,56 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 	inScope := 0
 
 	for _, result := range results.SAST {
-		lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
-		if err != nil {
-			logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
-		} else {
-			if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
-				continue
+		if HistorySearch {
+			//lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
+			predicateHistory, err := cx1client.GetSASTResultsPredicatesByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
+			if err != nil {
+				logger.Warnf("Failed to get predicates for project %v finding %v: %v", project.String(), result.String(), err)
 			} else {
-				inScope++
-				if applyChange {
-					predicate := result.CreateResultsPredicate(project.ProjectID, last_scan[0].ScanID)
-					predicate.State = "PROPOSED_NOT_EXPLOITABLE"
-					if PNEComment != "" {
-						predicate.Comment = PNEComment
-					}
-					if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
-						logger.Errorf("Failed to update project %v result %v to PNE (temporary): %v", project.String(), result.String(), err)
-						errCount++
+				if changed, importedPredicate := historyChangedSinceImport(predicateHistory); !changed {
+					if importedPredicate == nil {
+						logger.Debugf("Finding %v was not imported", result.String())
+						continue
 					} else {
-
-						predicate.State = lastPredicate.State
-						predicate.Comment = lastPredicate.Comment
-						if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
-							logger.Errorf("Failed to update project %v result %v back to %v: %v", project.String(), result.String(), lastPredicate.State, err)
-							errCount++
+						inScope++
+						if applyChange {
+							if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, importedPredicate.State, importedPredicate.Comment, result); err != nil {
+								logger.Warnf("Failed to update project %v: %v", project.String(), err)
+								errCount++
+							} else {
+								updatedCount++
+								logger.Debugf("Updated project %v finding %v", project.String(), result.String())
+							}
 						} else {
-							updatedCount++
+							logger.Infof("Would update project %v result %v", project.String(), result.String())
 						}
 					}
 				} else {
-					logger.Infof("Would update project %v result %v", project.String(), result.String())
+					logger.Debugf("Finding %v has already been updated manually", result.String())
+				}
+			}
+		} else {
+			lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
+			if err != nil {
+				logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
+			} else {
+				if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
+					logger.Debugf("Finding %v had an update since import, skipping", result.String())
+					continue
+				} else {
+					inScope++
+
+					if applyChange {
+						if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, lastPredicate.State, lastPredicate.Comment, result); err != nil {
+							logger.Warnf("Failed to update project %v: %v", project.String(), err)
+							errCount++
+						} else {
+							updatedCount++
+							logger.Debugf("Updated project %v finding %v", project.String(), result.String())
+						}
+					} else {
+						logger.Infof("Would update project %v result %v", project.String(), result.String())
+					}
 				}
 			}
 		}
@@ -196,5 +221,55 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 		}
 	}
 
+	return nil
+}
+
+func historyChangedSinceImport(predicateHistory []Cx1ClientGo.SASTResultsPredicates) (bool, *Cx1ClientGo.SASTResultsPredicates) {
+	importerId := -1
+	stateChanged := false
+	importedState := ""
+
+	for i := len(predicateHistory) - 1; i >= 0; i-- {
+		predicate := predicateHistory[i]
+		//fmt.Printf("Checking predicate %d: %v by %v\n", i, predicate.State, predicate.CreatedBy)
+		if strings.EqualFold(predicate.CreatedBy, "importer") {
+			importerId = i
+			importedState = predicate.State
+			//fmt.Printf(" - imported state: %v\n", predicate.State)
+			stateChanged = false
+		} else {
+			if importerId > -1 && predicate.State != importedState {
+				stateChanged = true
+				//fmt.Printf(" - state changed: %v\n", predicate.State)
+			}
+		}
+	}
+
+	if importerId > -1 {
+		return stateChanged, &predicateHistory[importerId]
+	}
+
+	return false, nil
+}
+
+func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, originalState, originalComment string, result Cx1ClientGo.ScanSASTResult) error {
+	predicate := result.CreateResultsPredicate(projectId, scanId)
+	predicate.State = "PROPOSED_NOT_EXPLOITABLE"
+	if PNEComment != "" {
+		predicate.Comment = PNEComment
+	}
+	if err := cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
+		return fmt.Errorf("failed to update result %v to PNE (temporary): %v", result.String(), err)
+	} else {
+		predicate.State = originalState
+		if originalComment != "" {
+			predicate.Comment = originalComment
+		} else {
+			predicate.Comment = "Importer Triage Fix"
+		}
+		if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
+			return fmt.Errorf("failed to update result %v back to %v: %v", result.String(), originalState, err)
+		}
+	}
 	return nil
 }
