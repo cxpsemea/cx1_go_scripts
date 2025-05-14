@@ -38,6 +38,8 @@ func main() {
 
 	Application := flag.String("app", "", "Optional: Name of application to process")
 	Project := flag.String("proj", "", "Optional: Name of project to process")
+	ProjectIDs := flag.String("project-ids", "", "Optional: Comma-separated list of project IDs to process")
+	ProjectNames := flag.String("project-names", "", "Optional: Comma-separated list of project names to process")
 	ApplyChange := flag.Bool("update", false, "Set this to true to actually apply changes, otherwise simply inform")
 	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
 	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
@@ -88,6 +90,16 @@ func main() {
 		if err != nil {
 			logger.Fatalf("Failed to process project %v: %v", *Project, err)
 		}
+	} else if *ProjectIDs != "" {
+		err := ProcessProjectIDsTriage(cx1client, *ProjectIDs, *ApplyChange, logger)
+		if err != nil {
+			logger.Fatalf("Failed to process projects with ids %v: %v", *ProjectIDs, err)
+		}
+	} else if *ProjectNames != "" {
+		err := ProcessProjectNamesTriage(cx1client, *ProjectNames, *ApplyChange, logger)
+		if err != nil {
+			logger.Fatalf("Failed to process projects with names %v: %v", *ProjectNames, err)
+		}
 	} else {
 		logger.Fatalf("A project or application must be specified")
 	}
@@ -122,6 +134,35 @@ func ProcessProjectTriage(cx1client *Cx1ClientGo.Cx1Client, project string, appl
 	} else {
 		return processProject(cx1client, proj, applyChange, logger)
 	}
+}
+
+func ProcessProjectIDsTriage(cx1client *Cx1ClientGo.Cx1Client, projectIDs string, applyChange bool, logger *logrus.Logger) error {
+	ids := strings.Split(projectIDs, ",")
+	for _, id := range ids {
+		if proj, err := cx1client.GetProjectByID(id); err != nil {
+			logger.Errorf("Failed to find project with id %v: %v", id, err)
+		} else {
+			if err = processProject(cx1client, proj, applyChange, logger); err != nil {
+				logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+			}
+		}
+	}
+	return nil
+}
+
+func ProcessProjectNamesTriage(cx1client *Cx1ClientGo.Cx1Client, projectNames string, applyChange bool, logger *logrus.Logger) error {
+	names := strings.Split(projectNames, ",")
+	for _, name := range names {
+
+		if proj, err := cx1client.GetProjectByName(name); err != nil {
+			logger.Errorf("Failed to find project with name %v: %v", name, err)
+		} else {
+			if err = processProject(cx1client, proj, applyChange, logger); err != nil {
+				logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+			}
+		}
+	}
+	return nil
 }
 
 func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Project, applyChange bool, logger *logrus.Logger) error {
