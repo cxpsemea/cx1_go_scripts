@@ -128,7 +128,7 @@ func ProcessScanResults(cx1client *Cx1ClientGo.Cx1Client, scanID string, logger 
 				SAST_Result: &result,
 			}
 		} else {
-			logger.Errorf("Conflict - scan has multiple api/sast-result findings with simID %v and result hash %v", result.SimilarityID, result.Data.ResultHash)
+			logger.Warningf("Conflict - scan has multiple api/sast-result findings with simID %v and result hash %v", result.SimilarityID, result.Data.ResultHash)
 		}
 	}
 
@@ -148,7 +148,7 @@ func ProcessScanResults(cx1client *Cx1ClientGo.Cx1Client, scanID string, logger 
 			}
 		} else {
 			if val.Result != nil {
-				logger.Errorf("Conflict - scan has multiple api/result findings with simID %v and result hash %v", result.SimilarityID, result.Data.ResultHash)
+				logger.Warningf("Conflict - scan has multiple api/result findings with simID %v and result hash %v", result.SimilarityID, result.Data.ResultHash)
 			} else {
 				val.Result = &result
 				result_map[result.SimilarityID][result.Data.ResultHash] = val
@@ -169,7 +169,7 @@ func ProcessScanResults(cx1client *Cx1ClientGo.Cx1Client, scanID string, logger 
 			}
 
 			if result.SAST_Result == nil || result.Result == nil {
-				logger.Errorf("Inconsistency for simID %v and result hash %v: api/sast-result gave %v while api/result gave %v", simID, resultHash, result.SAST_Result, result.Result)
+				logger.Warningf("Inconsistency for simID %v and result hash %v: api/sast-result gave %v while api/result gave %v", simID, resultHash, result.SAST_Result, result.Result)
 				continue
 			}
 
