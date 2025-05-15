@@ -14,7 +14,7 @@ import (
 )
 
 var PNEComment = ""
-var HistorySearch = false
+var Update = false
 
 func main() {
 	logger := logrus.New()
@@ -41,6 +41,8 @@ func main() {
 
 	ScanID := flag.String("scan", "", "Required: scan ID to check")
 	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
+	ApplyChange := flag.Bool("update", false, "Set this to true to reapply the last predicate if there is an inconsistency")
+	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
@@ -71,6 +73,8 @@ func main() {
 		logger.Info("Log level set to default: INFO")
 	}
 
+	Update = *ApplyChange
+	PNEComment = *CommentText
 	if *ScanID != "" {
 		if err := ProcessScanResults(cx1client, *ScanID, logger); err != nil {
 			logger.Errorf("Failed to process scan results: %v", err)
@@ -84,6 +88,11 @@ func main() {
 
 func ProcessScanResults(cx1client *Cx1ClientGo.Cx1Client, scanID string, logger *logrus.Logger) error {
 	logger.Infof("Processing scan %v", scanID)
+
+	scan, err := cx1client.GetScanByID(scanID)
+	if err != nil {
+		return err
+	}
 
 	results, err := cx1client.GetAllScanResultsByID(scanID)
 	if err != nil {
@@ -172,14 +181,26 @@ func ProcessScanResults(cx1client *Cx1ClientGo.Cx1Client, scanID string, logger 
 		slices.Sort(resultHashes)
 		for _, hash := range resultHashes {
 			result := result_map[simID][hash]
-			compareResults(result.SAST_Result, result.Result, logger)
+			if !compareResults(result.SAST_Result, result.Result, logger) && Update {
+				// findings are different
+				lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SAST_Result.SimilarityID, scan.ProjectID, scan.ScanID)
+				if err != nil {
+					logger.Errorf("Failed to get latest predicate for scan %v finding %v: %v", scan.String(), result.SAST_Result.String(), err)
+				} else {
+					if err := addResultPredicate(cx1client, scan.ProjectID, scan.ScanID, result.SAST_Result.State, lastPredicate.Comment, *result.SAST_Result); err != nil {
+						logger.Errorf("Failed to update result predicate for scan %v finding %v: %v", scan.String(), result.SAST_Result.String(), err)
+					} else {
+						logger.Infof("Updated result predicate for scan %v finding %v", scan.String(), result.SAST_Result.String())
+					}
+				}
+			}
 		}
 	}
 
 	return nil
 }
 
-func compareResults(sast_result *Cx1ClientGo.ScanSASTResult, result *Cx1ClientGo.ScanSASTResult, logger *logrus.Logger) {
+func compareResults(sast_result *Cx1ClientGo.ScanSASTResult, result *Cx1ClientGo.ScanSASTResult, logger *logrus.Logger) bool {
 	// both results are not nil, both results have matching simID and resultHash
 	diffs := []string{}
 	if sast_result.Severity != result.Severity {
@@ -194,7 +215,31 @@ func compareResults(sast_result *Cx1ClientGo.ScanSASTResult, result *Cx1ClientGo
 
 	if len(diffs) > 0 {
 		logger.Errorf("Inconsistency for simID %v and result hash %v: %v", sast_result.SimilarityID, sast_result.Data.ResultHash, strings.Join(diffs, ", "))
+		return false
 	} else {
 		logger.Debugf("Results match for simID %v and result hash %v: %v", sast_result.SimilarityID, sast_result.Data.ResultHash, sast_result.String())
+		return true
 	}
+}
+
+func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, originalState, originalComment string, result Cx1ClientGo.ScanSASTResult) error {
+	predicate := result.CreateResultsPredicate(projectId, scanId)
+	predicate.State = "PROPOSED_NOT_EXPLOITABLE"
+	if PNEComment != "" {
+		predicate.Comment = PNEComment
+	}
+	if err := cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
+		return fmt.Errorf("failed to update result %v to PNE (temporary): %v", result.String(), err)
+	} else {
+		predicate.State = originalState
+		if originalComment != "" {
+			predicate.Comment = originalComment
+		} else {
+			predicate.Comment = "Importer Triage Fix"
+		}
+		if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
+			return fmt.Errorf("failed to update result %v back to %v: %v", result.String(), originalState, err)
+		}
+	}
+	return nil
 }
