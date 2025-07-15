@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/sirupsen/logrus"
@@ -22,6 +23,7 @@ func main() {
 	logger.SetFormatter(myformatter)
 	logger.SetOutput(os.Stdout)
 
+	LogLevel := flag.String("log", "INFO", "Log level: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL")
 	ProjectsFile := flag.String("projects", "projectIds.txt", "File containing 1 project ID per line")
 	ProjectTag := flag.String("tag", "cx336-ui-fix", "Tag to add and remove")
 	Update := flag.Bool("update", false, "Apply the change or just inform")
@@ -43,6 +45,29 @@ func main() {
 		logger.Fatalf("Failed to create client: %v", err)
 	} else {
 		logger.Infof("Connected with %v", cx1client.String())
+	}
+
+	switch strings.ToUpper(*LogLevel) {
+	case "TRACE":
+		logger.Info("Setting log level to TRACE")
+		logger.SetLevel(logrus.TraceLevel)
+	case "DEBUG":
+		logger.Info("Setting log level to DEBUG")
+		logger.SetLevel(logrus.DebugLevel)
+	case "INFO":
+		logger.Info("Setting log level to INFO")
+		logger.SetLevel(logrus.InfoLevel)
+	case "WARNING":
+		logger.Info("Setting log level to WARNING")
+		logger.SetLevel(logrus.WarnLevel)
+	case "ERROR":
+		logger.Info("Setting log level to ERROR")
+		logger.SetLevel(logrus.ErrorLevel)
+	case "FATAL":
+		logger.Info("Setting log level to FATAL")
+		logger.SetLevel(logrus.FatalLevel)
+	default:
+		logger.Info("Log level set to default: INFO")
 	}
 
 	if *Update {
