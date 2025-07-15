@@ -29,7 +29,7 @@ func main() {
 	ProjectTag := flag.String("tag", "cx336-ui-fix", "Tag to add and remove")
 	Update := flag.Bool("update", false, "Apply the change or just inform")
 	AddOnly := flag.Bool("add", false, "Only add the tag, do not remove")
-	Delay := flag.Int("delay", 5, "Delay in seconds between projects")
+	Delay := flag.Int("delay", 5, "Delay in milliseconds between projects")
 	RemoveOnly := flag.Bool("remove", false, "Only remove the tag, do not add")
 
 	logger.Info("Starting")
@@ -124,7 +124,7 @@ func main() {
 						logger.Infof("Successfully updated project %v (removed tag)", project.String())
 					}
 				}
-				time.Sleep(time.Duration(*Delay) * time.Second)
+				time.Sleep(time.Duration(*Delay) * time.Millisecond)
 			} else {
 				logger.Infof("Would update project %v by adding & removing tag %v", project.String(), *ProjectTag)
 			}
