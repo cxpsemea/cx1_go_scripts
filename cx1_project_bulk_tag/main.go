@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,21 +98,24 @@ func main() {
 		}
 	}
 
-	logger.Infof("Checking %d projects...", len(ProjectIDs))
+	totalCount := len(ProjectIDs)
+	logger.Infof("Checking %d projects...", totalCount)
 
-	for _, pid := range ProjectIDs {
+	for i, pid := range ProjectIDs {
 		project, err := cx1client.GetProjectByID(pid)
 		if err != nil {
 			logger.Errorf("Failed to get project %v: %v", pid, err)
 		} else {
+			progress := fmt.Sprintf("[#%d/%d] ", i+1, totalCount)
+
 			if *Update {
 				if !*RemoveOnly {
 					project.Tags[*ProjectTag] = ""
 					err = cx1client.UpdateProject(&project)
 					if err != nil {
-						logger.Errorf("Failed to add tag %v to project %v: %v", *ProjectTag, project.String(), err)
+						logger.Errorf("%vFailed to add tag %v to project %v: %v", progress, *ProjectTag, project.String(), err)
 					} else {
-						logger.Infof("Successfully updated project %v (added tag)", project.String())
+						logger.Infof("%vSuccessfully updated project %v (added tag)", progress, project.String())
 					}
 				}
 
@@ -119,14 +123,14 @@ func main() {
 					delete(project.Tags, *ProjectTag)
 					err = cx1client.UpdateProject(&project)
 					if err != nil {
-						logger.Errorf("Failed to remove tag %v from project %v: %v", *ProjectTag, project.String(), err)
+						logger.Errorf("%vFailed to remove tag %v from project %v: %v", progress, *ProjectTag, project.String(), err)
 					} else {
-						logger.Infof("Successfully updated project %v (removed tag)", project.String())
+						logger.Infof("%vSuccessfully updated project %v (removed tag)", progress, project.String())
 					}
 				}
 				time.Sleep(time.Duration(*Delay) * time.Millisecond)
 			} else {
-				logger.Infof("Would update project %v by adding & removing tag %v", project.String(), *ProjectTag)
+				logger.Infof("%vWould update project %v by adding & removing tag %v", progress, project.String(), *ProjectTag)
 			}
 		}
 	}
