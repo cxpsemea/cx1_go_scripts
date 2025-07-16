@@ -37,17 +37,17 @@ func mainRunner() int {
 	APIKey1 := flag.String("apikey1", "", "CheckmarxOne API Key (if not using client id/secret)")
 	ClientID1 := flag.String("client1", "", "CheckmarxOne Client ID (if not using API Key)")
 	ClientSecret1 := flag.String("secret1", "", "CheckmarxOne Client Secret (if not using API Key)")
-	Cx1URL1 := flag.String("cx1", "", "Optional: CheckmarxOne platform URL, if not defined in the test config.yaml")
-	IAMURL1 := flag.String("iam1", "", "Optional: CheckmarxOne IAM URL, if not defined in the test config.yaml")
-	Tenant1 := flag.String("tenant1", "", "Optional: CheckmarxOne tenant, if not defined in the test config.yaml")
+	Cx1URL1 := flag.String("cx1", "", "Optional: CheckmarxOne platform URL")
+	IAMURL1 := flag.String("iam1", "", "Optional: CheckmarxOne IAM URL")
+	Tenant1 := flag.String("tenant1", "", "Optional: CheckmarxOne tenant")
 	Proxy1 := flag.String("proxy1", "", "Optional: Proxy to use when connecting to CheckmarxOne")
 
 	APIKey2 := flag.String("apikey2", "", "CheckmarxOne API Key (if not using client id/secret)")
 	ClientID2 := flag.String("client2", "", "CheckmarxOne Client ID (if not using API Key)")
 	ClientSecret2 := flag.String("secret2", "", "CheckmarxOne Client Secret (if not using API Key)")
-	Cx1URL2 := flag.String("cx2", "", "Optional: CheckmarxOne platform URL, if not defined in the test config.yaml")
-	IAMURL2 := flag.String("iam2", "", "Optional: CheckmarxOne IAM URL, if not defined in the test config.yaml")
-	Tenant2 := flag.String("tenant2", "", "Optional: CheckmarxOne tenant, if not defined in the test config.yaml")
+	Cx1URL2 := flag.String("cx2", "", "Optional: CheckmarxOne platform URL")
+	IAMURL2 := flag.String("iam2", "", "Optional: CheckmarxOne IAM URL")
+	Tenant2 := flag.String("tenant2", "", "Optional: CheckmarxOne tenant")
 	Proxy2 := flag.String("proxy2", "", "Optional: Proxy to use when connecting to CheckmarxOne")
 
 	Roles := flag.String("roles", "", "List of comma-separated roles to compare")
@@ -156,10 +156,7 @@ func mainRunner() int {
 				role2.SubRoles = subroles
 			}
 
-			if compareRoles(*Tenant1, role1, *Tenant2, role2, logger) {
-				logger.Infof("Role %v is the same between %v and %v", r, *Tenant1, *Tenant2)
-			} else {
-				logger.Errorf("Role %v is different between %v and %v", r, *Tenant1, *Tenant2)
+			if !compareRoles(*Tenant1, role1, *Tenant2, role2, logger) {
 				diffs++
 			}
 		} else if err1 != nil && err2 != nil {
@@ -179,11 +176,12 @@ func mainRunner() int {
 
 func compareRoles(tenant1 string, role1 Cx1ClientGo.Role, tenant2 string, role2 Cx1ClientGo.Role, logger *logrus.Logger) bool {
 	if !role1.Composite && !role2.Composite {
+		logger.Infof("Role %v exists in both tenants and does not contain sub-roles", role1.Name)
 		return true
 	}
 
+	var missing, common, extra []string
 	same := true
-
 	var r1, r2 []string
 	for _, r := range role1.SubRoles {
 		r1 = append(r1, r.Name)
@@ -193,22 +191,39 @@ func compareRoles(tenant1 string, role1 Cx1ClientGo.Role, tenant2 string, role2 
 	}
 
 	for _, r := range r1 {
-		if !slices.Contains(r2, r) {
-			logger.Errorf("Role %v in %v contains sub-role %v while role %v in %v does not", role1.String(), tenant1, r, role2.String(), tenant2)
+		if !slices.Contains(r2, r) { // sub-role is in tenant1 but not tenant2
+			extra = append(extra, r)
+			//logger.Errorf("Role %v in %v contains sub-role %v while role %v in %v does not", role1.String(), tenant1, r, role2.String(), tenant2)
 			same = false
+		} else {
+			common = append(common, r)
 		}
 	}
 
 	for _, r := range r2 {
-		if !slices.Contains(r1, r) {
-			logger.Errorf("Role %v in %v contains sub-role %v while role %v in %v does not", role2.String(), tenant2, r, role1.String(), tenant1)
+		if !slices.Contains(r1, r) { // sub-role is in tenant2 but not tenant1
+			missing = append(missing, r)
+			//logger.Errorf("Role %v in %v contains sub-role %v while role %v in %v does not", role2.String(), tenant2, r, role1.String(), tenant1)
 			same = false
 		}
 	}
 
 	if same {
-		slices.Sort(r1)
-		logger.Infof("Role %v contains sub-roles: %v", role1.Name, strings.Join(r1, ", "))
+		logger.Infof("Role %v is the same between %v and %v", role1.Name, tenant1, tenant2)
+	} else {
+		logger.Warnf("Role %v is different between %v and %v", role1.Name, tenant1, tenant2)
+	}
+
+	if len(common) > 0 {
+		logger.Infof(" - %d sub-roles in common: %v", len(common), strings.Join(common, ", "))
+	}
+
+	if len(missing) > 0 {
+		logger.Warnf(" - %d sub-roles are missing from %v: %v", len(missing), tenant1, strings.Join(missing, ", "))
+	}
+
+	if len(extra) > 0 {
+		logger.Warnf(" - %d sub-roles are extra in %v: %v", len(extra), tenant1, strings.Join(extra, ", "))
 	}
 
 	return same
