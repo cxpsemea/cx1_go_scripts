@@ -121,8 +121,8 @@ AppLoop:
 					} else {
 						logger.Infof("%vSuccessfully updated application %v (added tag)", progress, app.String())
 					}
+					time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
 				}
-				time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
 
 				if !*AddOnly {
 					delete(app.Tags, *AppTag)
@@ -132,8 +132,8 @@ AppLoop:
 					} else {
 						logger.Infof("%vSuccessfully updated application %v (removed tag)", progress, app.String())
 					}
+					time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
 				}
-				time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
 
 				if !*RunAll && i < totalCount-1 {
 					fmt.Print("Continue? [yes/no/all]: ")
