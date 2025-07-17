@@ -31,7 +31,7 @@ func main() {
 	AppTag := flag.String("tag", "cx336-ui-fix", "Tag to add and remove")
 	Update := flag.Bool("update", false, "Apply the change or just inform")
 	AddOnly := flag.Bool("add", false, "Only add the tag, do not remove")
-	Delay := flag.Int("delay", 1000, "Delay in milliseconds (per project in the application) between applications")
+	Delay := flag.Int("delay", 5000, "Delay in milliseconds (per project in the application) between applications")
 	RunAll := flag.Bool("all", false, "Run all updates in sequence without pausing between each application")
 	RemoveOnly := flag.Bool("remove", false, "Only remove the tag, do not add")
 
@@ -108,6 +108,8 @@ AppLoop:
 		app, err := cx1client.GetApplicationByID(appid)
 		if err != nil {
 			logger.Errorf("Failed to get application %v: %v", appid, err)
+		} else if len(*app.ProjectIds) == 0 {
+			logger.Infof("Application %v has no projects - skipping", app.String())
 		} else {
 			progress := fmt.Sprintf("[#%d/%d] ", i+1, totalCount)
 
