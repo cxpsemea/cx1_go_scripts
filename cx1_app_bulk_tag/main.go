@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,7 +112,9 @@ AppLoop:
 			progress := fmt.Sprintf("[#%d/%d] ", i+1, totalCount)
 
 			if *Update {
-				logger.Infof("%vApplication %v has %d projects", progress, app.String(), len(*app.ProjectIds))
+				totalWait := *Delay * len(*app.ProjectIds)
+
+				logger.Infof("%vApplication %v has %d projects - will wait for %d * %d = %d ms per update", progress, app.String(), len(*app.ProjectIds), *Delay, len(*app.ProjectIds), totalWait)
 
 				if !*RemoveOnly {
 					app.Tags[*AppTag] = ""
@@ -121,7 +124,7 @@ AppLoop:
 					} else {
 						logger.Infof("%vSuccessfully updated application %v (added tag)", progress, app.String())
 					}
-					time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
+					time.Sleep(time.Duration(totalWait) * time.Millisecond)
 				}
 
 				if !*AddOnly {
@@ -132,21 +135,35 @@ AppLoop:
 					} else {
 						logger.Infof("%vSuccessfully updated application %v (removed tag)", progress, app.String())
 					}
-					time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
+					time.Sleep(time.Duration(totalWait) * time.Millisecond)
 				}
 
-				if !*RunAll && i < totalCount-1 {
-					fmt.Print("Continue? [yes/no/all]: ")
-					scanner := bufio.NewScanner(os.Stdin)
-					if scanner.Scan() {
-						input := strings.ToLower(strings.TrimSpace(scanner.Text()))
-						switch input {
-						case "n", "no":
-							logger.Info("Exiting loop.")
-							break AppLoop
-						case "a", "all":
-							logger.Info("Continuing for all subsequent items.")
-							*RunAll = true
+				retryInput := true
+				for retryInput {
+					retryInput = false
+
+					if !*RunAll && i < totalCount-1 {
+						logger.Infof("Continue? [yes/no/all or d=# to adjust delay]: ")
+						scanner := bufio.NewScanner(os.Stdin)
+						if scanner.Scan() {
+							input := strings.ToLower(strings.TrimSpace(scanner.Text()))
+							if input == "n" || input == "no" {
+								logger.Info("Exiting loop.")
+								break AppLoop
+							} else if input == "a" || input == "all" {
+								logger.Info("Continuing for all subsequent items.")
+								*RunAll = true
+							} else if input[0] == 'd' && input[1] == '=' {
+								new_delay := input[2:]
+								new_delay_int, err := strconv.Atoi(new_delay)
+								if err != nil {
+									retryInput = true
+									logger.Errorf("Failed to parse new delay value %v: %v", new_delay, err)
+								} else {
+									logger.Infof("Updating delay from %d to %d", *Delay, new_delay_int)
+									*Delay = new_delay_int
+								}
+							}
 						}
 					}
 				}
