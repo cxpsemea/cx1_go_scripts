@@ -26,11 +26,12 @@ func main() {
 	logger.SetOutput(os.Stdout)
 
 	LogLevel := flag.String("log", "INFO", "Log level: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL")
-	AppsFile := flag.String("apps", "appIds.txt", "File containing 1 project ID per line")
+	AppsFile := flag.String("apps", "appIds.txt", "File containing 1 application ID per line")
 	AppTag := flag.String("tag", "cx336-ui-fix", "Tag to add and remove")
 	Update := flag.Bool("update", false, "Apply the change or just inform")
 	AddOnly := flag.Bool("add", false, "Only add the tag, do not remove")
-	Delay := flag.Int("delay", 1000, "Delay in milliseconds between projects")
+	Delay := flag.Int("delay", 1000, "Delay in milliseconds (per project in the application) between applications")
+	RunAll := flag.Bool("all", false, "Run all updates in sequence without pausing between each application")
 	RemoveOnly := flag.Bool("remove", false, "Only remove the tag, do not add")
 
 	logger.Info("Starting")
@@ -101,6 +102,7 @@ func main() {
 	totalCount := len(AppIDs)
 	logger.Infof("Checking %d apps...", totalCount)
 
+AppLoop:
 	for i, appid := range AppIDs {
 		app, err := cx1client.GetApplicationByID(appid)
 		if err != nil {
@@ -109,6 +111,8 @@ func main() {
 			progress := fmt.Sprintf("[#%d/%d] ", i+1, totalCount)
 
 			if *Update {
+				logger.Infof("%vApplication %v has %d projects", progress, app.String(), len(*app.ProjectIds))
+
 				if !*RemoveOnly {
 					app.Tags[*AppTag] = ""
 					err = cx1client.UpdateApplication(&app)
@@ -118,6 +122,7 @@ func main() {
 						logger.Infof("%vSuccessfully updated application %v (added tag)", progress, app.String())
 					}
 				}
+				time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
 
 				if !*AddOnly {
 					delete(app.Tags, *AppTag)
@@ -128,7 +133,23 @@ func main() {
 						logger.Infof("%vSuccessfully updated application %v (removed tag)", progress, app.String())
 					}
 				}
-				time.Sleep(time.Duration(*Delay) * time.Millisecond)
+				time.Sleep(time.Duration(*Delay*len(*app.ProjectIds)) * time.Millisecond)
+
+				if !*RunAll && i < totalCount-1 {
+					fmt.Print("Continue? [yes/no/all]: ")
+					scanner := bufio.NewScanner(os.Stdin)
+					if scanner.Scan() {
+						input := strings.ToLower(strings.TrimSpace(scanner.Text()))
+						switch input {
+						case "n", "no":
+							logger.Info("Exiting loop.")
+							break AppLoop
+						case "a", "all":
+							logger.Info("Continuing for all subsequent items.")
+							*RunAll = true
+						}
+					}
+				}
 			} else {
 				logger.Infof("%vWould update application %v by adding & removing tag %v", progress, app.String(), *AppTag)
 			}
