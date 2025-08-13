@@ -203,6 +203,7 @@ func main() {
 		} else {
 			logger.Infof("%vWould update project %v by setting the primary branch to '%v'", progress, projectId, branch)
 		}
+		i++
 	}
 
 	logger.Infof("Done")
