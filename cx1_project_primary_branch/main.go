@@ -123,7 +123,7 @@ func main() {
 		if len(*application.ProjectIds) == 0 {
 			logger.Fatalf("Application %v has no projects", application.String())
 		}
-		logger.Infof("Application %d has %d projects", application.ApplicationID, len(*application.ProjectIds))
+		logger.Infof("Application %v has %d projects", application.ApplicationID, len(*application.ProjectIds))
 
 		for pcount, ProjectID := range *application.ProjectIds {
 			project, err := cx1client.GetProjectByID(ProjectID)
