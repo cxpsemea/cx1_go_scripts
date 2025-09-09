@@ -14,8 +14,11 @@ import (
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
+var PriorityBranches []string
+var logger *logrus.Logger
+
 func main() {
-	logger := logrus.New()
+	logger = logrus.New()
 	logger.SetLevel(logrus.InfoLevel)
 	myformatter := &easy.Formatter{}
 	myformatter.TimestampFormat = "2006-01-02 15:04:05.000"
@@ -27,6 +30,7 @@ func main() {
 	ProjectsFile := flag.String("projects", "", "Optional: file containing 1 project ID per line (otherwise check all projects)")
 	ApplicationName := flag.String("appName", "", "Optional: name of application containing projects to update")
 	BranchesFile := flag.String("branches", "", "Optional: file containing one <projectId, branchName> per line - best performance")
+	BranchList := flag.String("branchlist", "main,master", "Optional: comma-separated list of branch names (case insensitive) to set as primary if it was scanned, by order of priority - set to first-scanned branch otherwise")
 	Update := flag.Bool("update", false, "Apply the change or just inform")
 	Delay := flag.Int("delay", 1000, "Delay in milliseconds between projects")
 
@@ -47,6 +51,14 @@ func main() {
 		logger.Fatalf("Failed to create client: %v", err)
 	} else {
 		logger.Infof("Connected with %v", cx1client.String())
+	}
+
+	PriorityBranches = strings.Split(*BranchList, ",")
+	if len(PriorityBranches) > 0 {
+		logger.Infof("Will set primary branches per project according to first-match in the priority list:")
+		for i, p := range PriorityBranches {
+			logger.Infof("%d: %v", i+1, p)
+		}
 	}
 
 	switch strings.ToUpper(*LogLevel) {
@@ -80,6 +92,7 @@ func main() {
 
 	//Projects := []Cx1ClientGo.Project{}
 	ProjectBranches := make(map[string]string)
+	ProjectMap := make(map[string]string)
 
 	if *ProjectsFile != "" {
 		logger.Infof("Parsing list of project IDs from %v", *ProjectsFile)
@@ -98,6 +111,7 @@ func main() {
 			if err != nil {
 				logger.Errorf("%d: Failed to get project %v: %v", pcount+1, ProjectID, err)
 			} else {
+				ProjectMap[ProjectID] = project.String()
 				branch, skipmsg, err := getPrimaryBranch(cx1client, &project)
 				if err != nil {
 					logger.Errorf("%d: %v", pcount+1, err)
@@ -130,6 +144,7 @@ func main() {
 			if err != nil {
 				logger.Errorf("%d: Failed to get project %v: %v", pcount+1, ProjectID, err)
 			} else {
+				ProjectMap[ProjectID] = project.String()
 				branch, skipmsg, err := getPrimaryBranch(cx1client, &project)
 				if err != nil {
 					logger.Errorf("%d: %v", pcount+1, err)
@@ -172,6 +187,7 @@ func main() {
 		}
 		logger.Infof("Got %d projects", len(Projects))
 		for pcount, project := range Projects {
+			ProjectMap[project.ProjectID] = project.String()
 			branch, skipmsg, err := getPrimaryBranch(cx1client, &project)
 			if err != nil {
 				logger.Errorf("%d: %v", pcount+1, err)
@@ -189,19 +205,23 @@ func main() {
 	i := 1
 	for projectId, branch := range ProjectBranches {
 		progress := fmt.Sprintf("[#%d/%d] ", i, totalCount)
+		p_string := projectId
+		if val, ok := ProjectMap[projectId]; ok {
+			p_string = val
+		}
 		if *Update {
 			err = cx1client.PatchProjectByID(projectId, Cx1ClientGo.ProjectPatch{MainBranch: &branch})
 			if err != nil {
-				logger.Errorf("%vFailed to set primary branch '%v' on project %v: %v", progress, branch, projectId, err)
+				logger.Errorf("%vFailed to set primary branch '%v' on project %v: %v", progress, branch, p_string, err)
 			} else {
-				logger.Infof("%vSuccessfully set primary branch '%v' on project %v", progress, branch, projectId)
+				logger.Infof("%vSuccessfully set primary branch '%v' on project %v", progress, branch, p_string)
 			}
 
 			if i+1 < totalCount {
 				time.Sleep(time.Duration(*Delay) * time.Millisecond)
 			}
 		} else {
-			logger.Infof("%vWould update project %v by setting the primary branch to '%v'", progress, projectId, branch)
+			logger.Infof("%vWould update project %v by setting the primary branch to '%v'", progress, p_string, branch)
 		}
 		i++
 	}
@@ -217,8 +237,35 @@ func getPrimaryBranch(cx1client *Cx1ClientGo.Cx1Client, project *Cx1ClientGo.Pro
 	branches, err := cx1client.GetProjectBranchesByID(project.ProjectID)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get branches for project %v: %v", project.String(), err)
-	} else if len(branches) != 1 {
-		return "", fmt.Sprintf("Skipping project %v - has %d scanned branches", project.String(), len(branches)), nil
+	} else if len(branches) == 0 {
+		return "", fmt.Sprintf("project %v has no scanned branches", project.String()), nil
+	}
+
+	// check priority list of branches
+	primaryBranch := ""
+	for _, p := range PriorityBranches {
+		for _, b := range branches {
+			if strings.EqualFold(p, b) {
+				return b, "", nil
+			}
+		}
+	}
+	// else check first scan branch
+	if primaryBranch == "" {
+		_, scan, err := cx1client.GetScansFiltered(Cx1ClientGo.ScanFilter{
+			ProjectID:  project.ProjectID,
+			Sort:       []string{"+created_at"},
+			BaseFilter: Cx1ClientGo.BaseFilter{Limit: 1},
+		})
+
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get first scan for project %v: %v", project.String(), err)
+		}
+		if len(scan) == 0 {
+			return "", "", fmt.Errorf("failed to get first scan for project %v", project.String())
+		}
+		return scan[0].Branch, "", nil
+
 	}
 
 	return branches[0], "", nil
