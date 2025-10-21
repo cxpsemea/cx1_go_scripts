@@ -149,7 +149,7 @@ func main() {
 				if err != nil {
 					logger.Errorf("%d: %v", pcount+1, err)
 				} else if skipmsg != "" {
-					logger.Warningf("%d: %v", pcount+1, skipmsg)
+					logger.Debugf("%d: %v", pcount+1, skipmsg)
 				} else {
 					ProjectBranches[ProjectID] = branch
 				}
