@@ -3,7 +3,7 @@ module github.com/cxpsemea/cx1_go_scripts/cx1_project_primary_branch
 go 1.23.3
 
 require (
-	github.com/cxpsemea/Cx1ClientGo v0.1.21
+	github.com/cxpsemea/Cx1ClientGo v0.1.32
 	github.com/sirupsen/logrus v1.9.3
 	github.com/t-tomalak/logrus-easy-formatter v0.0.0-20190827215021-c074f06c5816
 )

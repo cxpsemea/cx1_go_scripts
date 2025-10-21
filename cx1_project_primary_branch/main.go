@@ -185,14 +185,30 @@ func main() {
 		if err != nil {
 			logger.Fatalf("Failed to get projects: %v", err)
 		}
+		Overviews, err := cx1client.GetAllProjectOverviews()
+		if err != nil {
+			logger.Fatalf("Failed to get project overviews: %v", err)
+		}
+
+		overviewMap := make(map[string]*Cx1ClientGo.ProjectOverview)
+		for _, overview := range Overviews {
+			overviewMap[overview.ProjectID] = &overview
+		}
+
 		logger.Infof("Got %d projects", len(Projects))
 		for pcount, project := range Projects {
 			ProjectMap[project.ProjectID] = project.String()
-			branch, skipmsg, err := getPrimaryBranch(cx1client, &project)
+			var branch, skipmsg string
+
+			if overview, ok := overviewMap[project.ProjectID]; ok && overview.LastScanDate == "" {
+				skipmsg = fmt.Sprintf("Skipping project %v - has no scans", project.String())
+			} else {
+				branch, skipmsg, err = getPrimaryBranch(cx1client, &project)
+			}
 			if err != nil {
 				logger.Errorf("%d: %v", pcount+1, err)
 			} else if skipmsg != "" {
-				logger.Warningf("%d: %v", pcount+1, skipmsg)
+				logger.Debugf("%d: %v", pcount+1, skipmsg)
 			} else {
 				ProjectBranches[project.ProjectID] = branch
 			}
