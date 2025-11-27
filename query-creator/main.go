@@ -420,7 +420,7 @@ func createQueriesFromGroup(cx1client *Cx1ClientGo.Cx1Client, session *Cx1Client
 				existingQuery = &updatedQuery
 			}
 
-			if existingQuery.Severity != query.Severity {
+			if !strings.EqualFold(existingQuery.Severity, query.Severity) {
 				newMeta := existingQuery.GetMetadata()
 				newMeta.Severity = query.Severity
 				newMeta.IsExecutable = query.IsExecutable
