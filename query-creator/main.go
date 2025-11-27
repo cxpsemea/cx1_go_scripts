@@ -1,11 +1,9 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,13 +39,13 @@ func main() {
 	logger.Info("Starting")
 	client := &http.Client{}
 
-	if true {
+	/*if true {
 		proxyURL, _ := url.Parse("http://127.0.0.1:8080")
 		transport := &http.Transport{}
 		transport.Proxy = http.ProxyURL(proxyURL)
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		client.Transport = transport
-	}
+	}*/
 
 	cx1client, err := Cx1ClientGo.NewClient(client, logger)
 	if err != nil {
