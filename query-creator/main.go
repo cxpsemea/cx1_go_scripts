@@ -211,7 +211,7 @@ func LoadQueryFromFile(rootFolder, path string) (query Cx1ClientGo.SASTQuery, er
 	query.Group = parts[1]
 	query.Name = strings.TrimSuffix(parts[2], filepath.Ext(parts[2]))
 	query.IsExecutable = query.Group != "General"
-	query.Source = Header + string(data)
+	query.Source = Header + "\n" + string(data)
 	query.Severity = defaultQuery.Severity
 	query.Level = defaultQuery.Level
 	query.LevelID = defaultQuery.LevelID
