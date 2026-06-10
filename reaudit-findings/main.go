@@ -12,8 +12,9 @@ import (
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
-var PNEComment = ""
+var PNEComment = "Temporarily marking as PNE to trigger re-audit with original state"
 var HistorySearch = false
+var ReauditAll = false
 
 func main() {
 	logger := logrus.New()
@@ -44,6 +45,7 @@ func main() {
 	CommentText := flag.String("comment", "", "Optional: if the env requires a comment to be set when changing state to PNE, use this comment")
 	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
 	History := flag.Bool("history", false, "Optional: analyze the full predicate history (otherwise check only the latest predicate for 'importer' user)")
+	ReauditAllFlag := flag.Bool("reaudit-all", false, "Optional: re-audit every finding with a predicate, not just those last triaged by the 'importer' user")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
@@ -79,6 +81,7 @@ func main() {
 	}
 
 	HistorySearch = *History
+	ReauditAll = *ReauditAllFlag
 
 	if *Application != "" {
 		err := ProcessApplicationTriage(cx1client, *Application, *ApplyChange, logger)
@@ -192,7 +195,7 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 	inScope := 0
 
 	for _, result := range results.SAST {
-		if HistorySearch {
+		if HistorySearch && !ReauditAll {
 			//lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
 			predicateHistory, err := cx1client.GetSASTResultsPredicatesByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
 			if err != nil {
@@ -225,37 +228,46 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 			if err != nil {
 				logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
 			} else {
-				if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
+				if ReauditAll {
+					if lastPredicate.State == "" {
+						logger.Debugf("Finding %v has no predicate, skipping", result.String())
+						continue
+					}
+				} else if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
 					logger.Debugf("Finding %v had an update since import, skipping", result.String())
 					continue
-				} else {
-					inScope++
+				}
+				inScope++
 
-					if applyChange {
-						if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, lastPredicate.State, lastPredicate.Comment, result); err != nil {
-							logger.Warnf("Failed to update project %v: %v", project.String(), err)
-							errCount++
-						} else {
-							updatedCount++
-							logger.Debugf("Updated project %v finding %v", project.String(), result.String())
-						}
+				if applyChange {
+					if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, lastPredicate.State, lastPredicate.Comment, result); err != nil {
+						logger.Warnf("Failed to update project %v: %v", project.String(), err)
+						errCount++
 					} else {
-						logger.Infof("Would update project %v result %v", project.String(), result.String())
+						updatedCount++
+						logger.Debugf("Updated project %v finding %v", project.String(), result.String())
 					}
+				} else {
+					logger.Infof("Would update project %v result %v", project.String(), result.String())
 				}
 			}
 		}
 	}
 
+	scopeLabel := "by 'importer'"
+	if ReauditAll {
+		scopeLabel = "all triaged"
+	}
+
 	if inScope == 0 {
-		logger.Infof("No results in-scope (by 'importer') for project %v", project.String())
+		logger.Infof("No results in-scope (%s) for project %v", scopeLabel, project.String())
 	} else {
-		logger.Infof("%d/%d results in-scope (by 'importer') for project %v", inScope, len(results.SAST), project.String())
+		logger.Infof("%d/%d results in-scope (%s) for project %v", inScope, len(results.SAST), scopeLabel, project.String())
 		if applyChange {
 			if errCount > 0 {
 				logger.Errorf("Only updated %d/%d results for project %v", updatedCount, inScope, project.String())
 			} else {
-				logger.Infof("All %d 'importer' results updated for project %v", updatedCount, project.String())
+				logger.Infof("All %d in-scope results updated for project %v", updatedCount, project.String())
 			}
 		} else {
 			logger.Infof("Update skipped - 'update' flag not set")
@@ -306,7 +318,11 @@ func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, ori
 		if originalComment != "" {
 			predicate.Comment = originalComment
 		} else {
-			predicate.Comment = "Importer Triage Fix"
+			if ReauditAll {
+				predicate.Comment = "Reauditor Triage Fix"
+			} else {
+				predicate.Comment = "Importer Triage Fix"
+			}
 		}
 		if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
 			return fmt.Errorf("failed to update result %v back to %v: %v", result.String(), originalState, err)
