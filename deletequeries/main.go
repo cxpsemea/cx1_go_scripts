@@ -73,7 +73,7 @@ func main() {
 	for lid := range cqc.QueryLanguages {
 		for gid := range cqc.QueryLanguages[lid].QueryGroups {
 			for _, q := range cqc.QueryLanguages[lid].QueryGroups[gid].Queries {
-				if err := refreshAuditSession(cx1client, q.Language); err != nil {
+				if err := refreshAuditSession(cx1client, q.Language, logger); err != nil {
 					logger.Fatalf("Failed to refresh audit session %s for query %v", err, q.StringDetailed())
 				}
 				if err := cx1client.DeleteQueryOverrideByKey(auditSession, q.CalculateEditorKey()); err != nil {
@@ -87,16 +87,24 @@ func main() {
 
 }
 
-func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
-	if auditSession != nil && auditSession.HasLanguage(language) {
-		if err := cx1client.AuditSessionKeepAlive(auditSession); err != nil {
-			if err = createAuditSession(cx1client, language); err != nil {
-				return err
-			}
-		}
-	} else {
+func refreshAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string, logger *logrus.Logger) error {
+	if auditSession == nil {
 		if err := createAuditSession(cx1client, language); err != nil {
 			return err
+		}
+	} else {
+		if auditSession.HasLanguage(language) {
+			if err := cx1client.AuditSessionKeepAlive(auditSession); err != nil {
+				deleteAuditSession(cx1client, logger)
+				if err = createAuditSession(cx1client, language); err != nil {
+					return err
+				}
+			}
+		} else {
+			deleteAuditSession(cx1client, logger)
+			if err := createAuditSession(cx1client, language); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -112,7 +120,11 @@ func deleteAuditSession(cx1client *Cx1ClientGo.Cx1Client, logger *logrus.Logger)
 
 	if err := cx1client.AuditDeleteSession(auditSession); err != nil {
 		logger.Errorf("Failed to delete audit session: %s", err)
+	} else {
+		logger.Infof("Successfully deleted audit session: %v", auditSession.ID)
 	}
+
+	auditSession = nil
 }
 
 func createAuditSession(cx1client *Cx1ClientGo.Cx1Client, language string) error {
