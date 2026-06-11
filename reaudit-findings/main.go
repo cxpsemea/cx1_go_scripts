@@ -52,7 +52,7 @@ func main() {
 	History := flag.Bool("history", false, "Optional: analyze the full predicate history (otherwise check only the latest predicate for 'importer' user)")
 	ReauditAllFlag := flag.Bool("reaudit-all", false, "Optional: re-audit every finding with a predicate, not just those last triaged by the 'importer' user")
 	Delay := flag.Int("delay", 5000, "Optional: delay in milliseconds between setting PNE and reverting to original state")
-	BetweenFindingsDelay := flag.Int("intra-delay", 100, "Optional: delay in milliseconds between processing individual findings (to prevent API flooding)")
+	BetweenFindingsDelay := flag.Int("intra-delay", 500, "Optional: delay in milliseconds between processing individual findings (to prevent API flooding)")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
