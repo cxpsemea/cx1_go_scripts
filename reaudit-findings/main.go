@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/cxpsemea/Cx1ClientGo"
 	"github.com/sirupsen/logrus"
@@ -15,6 +18,7 @@ import (
 var PNEComment = "Temporarily marking as PNE to trigger re-audit with original state"
 var HistorySearch = false
 var ReauditAll = false
+var sem = make(chan struct{}, 100)
 
 func main() {
 	logger := logrus.New()
@@ -114,18 +118,24 @@ func ProcessApplicationTriage(cx1client *Cx1ClientGo.Cx1Client, application stri
 	if app, err := cx1client.GetApplicationByName(application); err != nil {
 		return err
 	} else {
+		var wg sync.WaitGroup
 		for id, projID := range app.ProjectIds {
 			if id%10 == 0 && id != 0 {
 				logger.Infof("Progress: project %d of %d", id, len(app.ProjectIds))
 			}
-			if proj, err := cx1client.GetProjectByID(projID); err != nil {
-				logger.Errorf("Failed to get project %v for application %v: %v", projID, app.String(), err)
-			} else {
-				if err := processProject(cx1client, proj, applyChange, logger); err != nil {
-					logger.Warnf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
+			wg.Add(1)
+			go func(pID string) {
+				defer wg.Done()
+				if proj, err := cx1client.GetProjectByID(pID); err != nil {
+					logger.Errorf("Failed to get project %v for application %v: %v", pID, app.String(), err)
+				} else {
+					if err := processProject(cx1client, proj, applyChange, logger); err != nil {
+						logger.Warnf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
+					}
 				}
-			}
+			}(projID)
 		}
+		wg.Wait()
 	}
 
 	return nil
@@ -141,30 +151,41 @@ func ProcessProjectTriage(cx1client *Cx1ClientGo.Cx1Client, project string, appl
 
 func ProcessProjectIDsTriage(cx1client *Cx1ClientGo.Cx1Client, projectIDs string, applyChange bool, logger *logrus.Logger) error {
 	ids := strings.Split(projectIDs, ",")
+	var wg sync.WaitGroup
 	for _, id := range ids {
-		if proj, err := cx1client.GetProjectByID(id); err != nil {
-			logger.Errorf("Failed to find project with id %v: %v", id, err)
-		} else {
-			if err = processProject(cx1client, proj, applyChange, logger); err != nil {
-				logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+		wg.Add(1)
+		go func(pID string) {
+			defer wg.Done()
+			if proj, err := cx1client.GetProjectByID(pID); err != nil {
+				logger.Errorf("Failed to find project with id %v: %v", pID, err)
+			} else {
+				if err = processProject(cx1client, proj, applyChange, logger); err != nil {
+					logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+				}
 			}
-		}
+		}(id)
 	}
+	wg.Wait()
 	return nil
 }
 
 func ProcessProjectNamesTriage(cx1client *Cx1ClientGo.Cx1Client, projectNames string, applyChange bool, logger *logrus.Logger) error {
 	names := strings.Split(projectNames, ",")
+	var wg sync.WaitGroup
 	for _, name := range names {
-
-		if proj, err := cx1client.GetProjectByName(name); err != nil {
-			logger.Errorf("Failed to find project with name %v: %v", name, err)
-		} else {
-			if err = processProject(cx1client, proj, applyChange, logger); err != nil {
-				logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+		wg.Add(1)
+		go func(pName string) {
+			defer wg.Done()
+			if proj, err := cx1client.GetProjectByName(pName); err != nil {
+				logger.Errorf("Failed to find project with name %v: %v", pName, err)
+			} else {
+				if err = processProject(cx1client, proj, applyChange, logger); err != nil {
+					logger.Errorf("Failed to process project %v: %v", proj.String(), err)
+				}
 			}
-		}
+		}(name)
 	}
+	wg.Wait()
 	return nil
 }
 
@@ -190,69 +211,76 @@ func processProject(cx1client *Cx1ClientGo.Cx1Client, project Cx1ClientGo.Projec
 		return err
 	}
 
-	updatedCount := 0
-	errCount := 0
-	inScope := 0
+	var updatedCount int32
+	var errCount int32
+	var inScope int32
+	var projectWg sync.WaitGroup
 
 	for _, result := range results.SAST {
-		if HistorySearch && !ReauditAll {
-			//lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
-			predicateHistory, err := cx1client.GetSASTResultsPredicatesByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
-			if err != nil {
-				logger.Warnf("Failed to get predicates for project %v finding %v: %v", project.String(), result.String(), err)
-			} else {
-				if changed, importedPredicate := historyChangedSinceImport(predicateHistory); !changed {
-					if importedPredicate == nil {
-						logger.Debugf("Finding %v was not imported", result.String())
-						continue
-					} else {
-						inScope++
-						if applyChange {
-							if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, importedPredicate.State, importedPredicate.Comment, result); err != nil {
-								logger.Warnf("Failed to update project %v: %v", project.String(), err)
-								errCount++
-							} else {
-								updatedCount++
-								logger.Debugf("Updated project %v finding %v", project.String(), result.String())
-							}
-						} else {
-							logger.Infof("Would update project %v result %v", project.String(), result.String())
-						}
-					}
-				} else {
-					logger.Debugf("Finding %v has already been updated manually", result.String())
-				}
-			}
-		} else {
-			lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
-			if err != nil {
-				logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
-			} else {
-				if ReauditAll {
-					if lastPredicate.State == "" {
-						logger.Debugf("Finding %v has no predicate, skipping", result.String())
-						continue
-					}
-				} else if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
-					logger.Debugf("Finding %v had an update since import, skipping", result.String())
-					continue
-				}
-				inScope++
+		projectWg.Add(1)
+		go func(result Cx1ClientGo.ScanSASTResult) {
+			defer projectWg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-				if applyChange {
-					if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, lastPredicate.State, lastPredicate.Comment, result); err != nil {
-						logger.Warnf("Failed to update project %v: %v", project.String(), err)
-						errCount++
-					} else {
-						updatedCount++
-						logger.Debugf("Updated project %v finding %v", project.String(), result.String())
-					}
+			if HistorySearch && !ReauditAll {
+				predicateHistory, err := cx1client.GetSASTResultsPredicatesByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
+				if err != nil {
+					logger.Warnf("Failed to get predicates for project %v finding %v: %v", project.String(), result.String(), err)
 				} else {
-					logger.Infof("Would update project %v result %v", project.String(), result.String())
+					if changed, importedPredicate := historyChangedSinceImport(predicateHistory); !changed {
+						if importedPredicate == nil {
+							logger.Debugf("Finding %v was not imported", result.String())
+						} else {
+							atomic.AddInt32(&inScope, 1)
+							if applyChange {
+								if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, importedPredicate.State, importedPredicate.Comment, result); err != nil {
+									logger.Warnf("Failed to update project %v: %v", project.String(), err)
+									atomic.AddInt32(&errCount, 1)
+								} else {
+									atomic.AddInt32(&updatedCount, 1)
+									logger.Debugf("Updated project %v finding %v", project.String(), result.String())
+								}
+							} else {
+								logger.Infof("Would update project %v result %v", project.String(), result.String())
+							}
+						}
+					} else {
+						logger.Debugf("Finding %v has already been updated manually", result.String())
+					}
+				}
+			} else {
+				lastPredicate, err := cx1client.GetLastSASTResultsPredicateByID(result.SimilarityID, project.ProjectID, last_scan[0].ScanID)
+				if err != nil {
+					logger.Warnf("Failed to get latest predicate for project %v finding %v: %v", project.String(), result.String(), err)
+				} else {
+					if ReauditAll {
+						if lastPredicate.State == "" {
+							logger.Debugf("Finding %v has no predicate, skipping", result.String())
+							return
+						}
+					} else if !strings.EqualFold(lastPredicate.CreatedBy, "importer") {
+						logger.Debugf("Finding %v had an update since import, skipping", result.String())
+						return
+					}
+					atomic.AddInt32(&inScope, 1)
+
+					if applyChange {
+						if err := addResultPredicate(cx1client, project.ProjectID, last_scan[0].ScanID, lastPredicate.State, lastPredicate.Comment, result); err != nil {
+							logger.Warnf("Failed to update project %v: %v", project.String(), err)
+							atomic.AddInt32(&errCount, 1)
+						} else {
+							atomic.AddInt32(&updatedCount, 1)
+							logger.Debugf("Updated project %v finding %v", project.String(), result.String())
+						}
+					} else {
+						logger.Infof("Would update project %v result %v", project.String(), result.String())
+					}
 				}
 			}
-		}
+		}(result)
 	}
+	projectWg.Wait()
 
 	scopeLabel := "by 'importer'"
 	if ReauditAll {
@@ -284,16 +312,13 @@ func historyChangedSinceImport(predicateHistory []Cx1ClientGo.SASTResultsPredica
 
 	for i := len(predicateHistory) - 1; i >= 0; i-- {
 		predicate := predicateHistory[i]
-		//fmt.Printf("Checking predicate %d: %v by %v\n", i, predicate.State, predicate.CreatedBy)
 		if strings.EqualFold(predicate.CreatedBy, "importer") {
 			importerId = i
 			importedState = predicate.State
-			//fmt.Printf(" - imported state: %v\n", predicate.State)
 			stateChanged = false
 		} else {
 			if importerId > -1 && predicate.State != importedState {
 				stateChanged = true
-				//fmt.Printf(" - state changed: %v\n", predicate.State)
 			}
 		}
 	}
@@ -312,8 +337,9 @@ func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, ori
 		predicate.Comment = PNEComment
 	}
 	if err := cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
-		return fmt.Errorf("failed to update result %v to PNE (temporary): %v", result.String(), err)
+		return fmt.Errorf("failed to update project %s result %s to PNE (temporary): %v", projectId, result.String(), err)
 	} else {
+		time.Sleep(5 * time.Second)
 		predicate.State = originalState
 		if originalComment != "" {
 			predicate.Comment = originalComment
@@ -325,7 +351,7 @@ func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, ori
 			}
 		}
 		if err = cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
-			return fmt.Errorf("failed to update result %v back to %v: %v", result.String(), originalState, err)
+			return fmt.Errorf("failed to update project %s result %s back to %v: %v", projectId, result.String(), originalState, err)
 		}
 	}
 	return nil
