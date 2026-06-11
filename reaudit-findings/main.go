@@ -19,7 +19,7 @@ var PNEComment = "Temporarily marking as PNE to trigger re-audit with original s
 var HistorySearch = false
 var ReauditAll = false
 var ReauditDelay, IntraDelay time.Duration
-var sem = make(chan struct{}, 100)
+var sem chan struct{}
 
 func main() {
 	logger := logrus.New()
@@ -53,6 +53,7 @@ func main() {
 	ReauditAllFlag := flag.Bool("reaudit-all", false, "Optional: re-audit every finding with a predicate, not just those last triaged by the 'importer' user")
 	Delay := flag.Int("delay", 5000, "Optional: delay in milliseconds between setting PNE and reverting to original state")
 	BetweenFindingsDelay := flag.Int("intra-delay", 500, "Optional: delay in milliseconds between processing individual findings (to prevent API flooding)")
+	BufferSize := flag.Int("buffer", 100, "Optional: number of concurrent goroutines to process findings (to prevent API flooding)")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
@@ -62,6 +63,7 @@ func main() {
 
 	ReauditDelay = time.Duration(*Delay) * time.Millisecond
 	IntraDelay = time.Duration(*BetweenFindingsDelay) * time.Millisecond
+	sem = make(chan struct{}, *BufferSize)
 
 	switch strings.ToUpper(*LogLevel) {
 	case "TRACE":
