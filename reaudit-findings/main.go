@@ -18,6 +18,7 @@ import (
 var PNEComment = "Temporarily marking as PNE to trigger re-audit with original state"
 var HistorySearch = false
 var ReauditAll = false
+var ReauditDelay time.Duration
 var sem = make(chan struct{}, 100)
 
 func main() {
@@ -50,12 +51,15 @@ func main() {
 	LogLevel := flag.String("log", "info", "Log level: trace, debug, info, warning, error, fatal")
 	History := flag.Bool("history", false, "Optional: analyze the full predicate history (otherwise check only the latest predicate for 'importer' user)")
 	ReauditAllFlag := flag.Bool("reaudit-all", false, "Optional: re-audit every finding with a predicate, not just those last triaged by the 'importer' user")
+	Delay := flag.Int("delay", 5000, "Optional: delay in milliseconds between setting PNE and reverting to original state (default 5000ms)")
 
 	cx1client, err := Cx1ClientGo.NewClient(httpClient, logger)
 	if err != nil {
 		logger.Fatalf("Error creating client: %s", err)
 	}
 	logger.Infof("Connected with: %v", cx1client.String())
+
+	ReauditDelay = time.Duration(*Delay) * time.Millisecond
 
 	switch strings.ToUpper(*LogLevel) {
 	case "TRACE":
@@ -339,7 +343,7 @@ func addResultPredicate(cx1client *Cx1ClientGo.Cx1Client, projectId, scanId, ori
 	if err := cx1client.AddSASTResultsPredicates([]Cx1ClientGo.SASTResultsPredicates{predicate}); err != nil {
 		return fmt.Errorf("failed to update project %s result %s to PNE (temporary): %v", projectId, result.String(), err)
 	} else {
-		time.Sleep(5 * time.Second)
+		time.Sleep(ReauditDelay)
 		predicate.State = originalState
 		if originalComment != "" {
 			predicate.Comment = originalComment
