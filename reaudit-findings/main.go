@@ -126,24 +126,26 @@ func ProcessApplicationTriage(cx1client *Cx1ClientGo.Cx1Client, application stri
 	if app, err := cx1client.GetApplicationByName(application); err != nil {
 		return err
 	} else {
-		var wg sync.WaitGroup
-		for id, projID := range app.ProjectIds {
-			if id%10 == 0 && id != 0 {
-				logger.Infof("Progress: project %d of %d", id, len(app.ProjectIds))
-			}
-			wg.Add(1)
-			go func(pID string) {
-				defer wg.Done()
-				if proj, err := cx1client.GetProjectByID(pID); err != nil {
-					logger.Errorf("Failed to get project %v for application %v: %v", pID, app.String(), err)
-				} else {
-					if err := processProject(cx1client, proj, applyChange, logger); err != nil {
-						logger.Warnf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
-					}
+		if len(*app.ProjectIds) > 0 {
+			var wg sync.WaitGroup
+			for id, projID := range *app.ProjectIds {
+				if id%10 == 0 && id != 0 {
+					logger.Infof("Progress: project %d of %d", id, len(*app.ProjectIds))
 				}
-			}(projID)
+				wg.Add(1)
+				go func(pID string) {
+					defer wg.Done()
+					if proj, err := cx1client.GetProjectByID(pID); err != nil {
+						logger.Errorf("Failed to get project %v for application %v: %v", pID, app.String(), err)
+					} else {
+						if err := processProject(cx1client, proj, applyChange, logger); err != nil {
+							logger.Warnf("Failed to process project %v for application %v: %v", proj.String(), app.String(), err)
+						}
+					}
+				}(projID)
+			}
+			wg.Wait()
 		}
-		wg.Wait()
 	}
 
 	return nil
