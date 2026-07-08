@@ -29,6 +29,8 @@ It can be run with other authentication options, full details are available by r
         Queries will be created with this severity level (Info, Low, Medium, High, Critical) (default "Info")
   -delete
         If set, the queries found in the -queries folder will be deleted instead of created/updated
+  -create
+        If set, the queries found in the -queries folder will actually be created/updated
   -log string
         Log level: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL (default "INFO")
 ```
@@ -41,4 +43,6 @@ The folder contents should match the structure shown in the query editor/web aud
 Language/Group/Query.cs
 ```
 
-Each query is created (or updated, if a query of the same name/group/language already exists) at the tenant level, using an Audit Session per language. If `-header` is set, its contents are prepended to every query's source. If `-delete` is set, the tool instead removes any tenant-level query overrides matching the queries found in the folder, rather than creating/updating them. 
+Each query is created (or updated, if a query of the same name/group/language already exists) at the tenant level, using an Audit Session per language. If `-header` is set, its contents are prepended to every query's source.
+
+By default (neither `-create` nor `-delete` set), the tool only logs what it would create/update or delete for every query found in the `-queries` folder - no changes are made to Cx1. Set `-create` to actually create/update those queries, or `-delete` to actually remove the matching tenant-level query overrides instead. These flags are independent; setting both would run both the delete pass and the create/update pass, which is not a typical use case.

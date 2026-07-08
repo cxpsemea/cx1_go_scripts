@@ -4,13 +4,13 @@ This is an example/demo script showing how to create a SAML user in Checkmarx On
 
 Usage:
 ```
-createSAMLUser
+createSAMLUser -update
 ```
 
-There are no command-line flags. The script has no configurable input - all values (user details, IdP alias, and unique SAML user ID) are hardcoded in `main.go` and must be edited directly in the source to adapt this example for another environment.
+The only command-line flag is `-update` (default `false`) - set this to actually delete/create the example user. If not set, the script only logs a warning plus what it would do - no changes are made. All other values (user details, IdP alias, and unique SAML user ID) are hardcoded in `main.go` and must be edited directly in the source to adapt this example for another environment.
 
-Behavior:
+Behavior (once `-update` is set):
 - If a user with email `groucho@cx.local` already exists, it is deleted first.
 - A new user (`Groucho Marx`, username `groucho`, email `groucho@cx.local`) is created via `CreateSAMLUser`, associated with the IdP alias `dockerhost` and a hardcoded unique SAML identifier that corresponds to a specific user in the author's own Keycloak IdP - this ID will not work for other environments and must be replaced.
 
-There is no dry-run mode - running the script always attempts to delete/create the user.
+**WARNING**: this tool will delete the existing user `groucho@cx.local` (if present) and recreate it as a SAML user. Use with caution, this is irreversible. Without `-update`, the script is safe to run to preview what would happen.
