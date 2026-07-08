@@ -25,6 +25,12 @@ It can be run with other authentication options, full details are available by r
         Optional: CheckmarxOne tenant, if not defined in the test config.yaml
   -token string
         Optional: A valid access_token. If this value is provided, others will be ignored - the client will lose access when the token expires
+  -severity string
+        Queries will be created with this severity level (Info, Low, Medium, High, Critical) (default "Info")
+  -delete
+        If set, the queries found in the -queries folder will be deleted instead of created/updated
+  -log string
+        Log level: TRACE, DEBUG, INFO, WARNING, ERROR, FATAL (default "INFO")
 ```
 
 # Queries folder structure
@@ -35,4 +41,4 @@ The folder contents should match the structure shown in the query editor/web aud
 Language/Group/Query.cs
 ```
 
-To update 
+Each query is created (or updated, if a query of the same name/group/language already exists) at the tenant level, using an Audit Session per language. If `-header` is set, its contents are prepended to every query's source. If `-delete` is set, the tool instead removes any tenant-level query overrides matching the queries found in the folder, rather than creating/updating them. 
