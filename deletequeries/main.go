@@ -36,10 +36,16 @@ func main() {
 	var err error
 
 	ProjectName := flag.String("project", "", "Optional name of a project in CheckmarxOne")
+	Update := flag.Bool("update", false, "Set this to true to actually delete the query overrides, otherwise only inform what would be deleted")
 	cx1client, err = Cx1ClientGo.NewClient(httpClient, logger)
 
 	if err != nil {
 		logger.Fatalf("Error creating client: %s", err)
+	}
+
+	if !*Update {
+		logger.Warn("This tool will delete all custom query overrides. Use with caution, this is irreversible.")
+		logger.Info("Running in informational mode only, no changes will be made (-update flag not set)")
 	}
 
 	logger.Infof("Connected with %v", cx1client.String())
@@ -73,6 +79,10 @@ func main() {
 	for lid := range cqc.QueryLanguages {
 		for gid := range cqc.QueryLanguages[lid].QueryGroups {
 			for _, q := range cqc.QueryLanguages[lid].QueryGroups[gid].Queries {
+				if !*Update {
+					logger.Infof("Would delete query %v", q.StringDetailed())
+					continue
+				}
 				if err := refreshAuditSession(cx1client, q.Language, logger); err != nil {
 					logger.Fatalf("Failed to refresh audit session %s for query %v", err, q.StringDetailed())
 				}

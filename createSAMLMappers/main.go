@@ -22,6 +22,7 @@ func main() {
 	logger.Info("Starting")
 
 	providerName := flag.String("provider-alias", "", "Alias (display name) of the SAML IdP which already exists in CheckmarxOne")
+	update := flag.Bool("update", false, "Set this to true to actually add the SAML mappers, otherwise only inform what would be added")
 
 	httpClient := &http.Client{}
 
@@ -34,6 +35,11 @@ func main() {
 		logger.Fatalf("Error creating client: %s", err)
 	}
 
+	if !*update {
+		logger.Warn("This tool will add default attribute mappers (firstname, lastname, username, role, group, email) to the specified SAML identity provider. Use with caution, this may overwrite existing mappers.")
+		logger.Info("Running in informational mode only, no changes will be made (-update flag not set)")
+	}
+
 	logger.Infof("Connected with %v", cx1client.String())
 
 	idp, err := cx1client.GetAuthenticationProviderByAlias(*providerName)
@@ -43,17 +49,19 @@ func main() {
 
 	logger.Infof("Found IDP: %v", idp.String())
 
-	mapper, _ := idp.MakeDefaultMapper("firstname")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
-	mapper, _ = idp.MakeDefaultMapper("lastname")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
-	mapper, _ = idp.MakeDefaultMapper("username")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
-	mapper, _ = idp.MakeDefaultMapper("role")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
-	mapper, _ = idp.MakeDefaultMapper("group")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
-	mapper, _ = idp.MakeDefaultMapper("email")
-	_ = cx1client.AddAuthenticationProviderMapper(mapper)
+	mapperNames := []string{"firstname", "lastname", "username", "role", "group", "email"}
+
+	for _, name := range mapperNames {
+		if !*update {
+			logger.Infof("Would add default mapper: %v", name)
+			continue
+		}
+		mapper, _ := idp.MakeDefaultMapper(name)
+		if err := cx1client.AddAuthenticationProviderMapper(mapper); err != nil {
+			logger.Errorf("Failed to add mapper %v: %s", name, err)
+		} else {
+			logger.Infof("Added default mapper: %v", name)
+		}
+	}
 
 }

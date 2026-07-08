@@ -34,7 +34,8 @@ func main() {
 	//scanId := flag.String("scan-id", "", "Optional: Create queries in the project owning this scan ID (tenant-level by default)")
 	//application := flag.Bool("application", false, "Optional: Create queries in the application owning the project (requires scan-id to be set)")
 	severity := flag.String("severity", "Info", "Queries will be created with this severity level (Info, Low, Medium, High, Critical)")
-	deleteQueries := flag.Bool("delete", false, "If set, the queries will be deleted instead of created/updated")
+	deleteQueries := flag.Bool("delete", false, "If set, the queries will be deleted")
+	createQueries := flag.Bool("create", false, "If set, the queries will be created/updated")
 
 	logger.Info("Starting")
 	client := &http.Client{}
@@ -93,7 +94,7 @@ func main() {
 		project = &tproject
 	}*/
 
-	logger.Infof("Will set the severity of new queries to: %v", *severity)
+	logger.Infof("If queries are created, they will have their severity set to: %v", *severity)
 	defaultQuery.Severity = strings.ToLower(*severity)
 
 	/*if *application {
@@ -121,7 +122,7 @@ func main() {
 	defaultQuery.LevelID = cx1client.QueryTypeTenant()
 
 	if *headerFile != "" {
-		logger.Infof("Will prepend each query with contents of %v", *headerFile)
+		logger.Infof("Would prepend each query with contents of %v", *headerFile)
 		data, err := os.ReadFile(*headerFile)
 		if err != nil {
 			logger.Fatalf("Failed to read header file: %v", err)
@@ -129,7 +130,7 @@ func main() {
 		Header = string(data)
 	}
 
-	logger.Infof("Will install queries from %v", *queriesFolder)
+	logger.Infof("Loading queries from %v folder", *queriesFolder)
 	queries, err := LoadQueriesFromFolder(*queriesFolder)
 	if err != nil {
 		logger.Fatalf("Failed to load queries: %v", err)
@@ -141,13 +142,9 @@ func main() {
 	}
 	logger.Infof("Loaded queries for the following languages: %v", strings.Join(queryLanguages, ", "))
 
-	if *deleteQueries {
-		err = CreateQueriesFromCollection(cx1client, queries, nil, true)
-	} else {
-		err = CreateQueriesFromCollection(cx1client, queries, nil, false)
-	}
+	err = CreateQueriesFromCollection(cx1client, queries, nil, *createQueries, *deleteQueries)
 	if err != nil {
-		logger.Fatalf("Failed to create queries: %v", err)
+		logger.Fatalf("Failed to create/delete queries: %v", err)
 	}
 
 	logger.Info("Done")
@@ -177,7 +174,7 @@ func LoadQueriesFromFolder(folder string) (collection Cx1ClientGo.SASTQueryColle
 		}
 
 		collection.AddQuery(query)
-		logger.Infof("Will create/update: %v [exec: %v]", query.StringDetailed(), query.IsExecutable)
+		logger.Infof("Loaded query: %v [exec: %v]", query.StringDetailed(), query.IsExecutable)
 		return nil
 	})
 
@@ -217,7 +214,7 @@ func LoadQueryFromFile(rootFolder, path string) (query Cx1ClientGo.SASTQuery, er
 	return query, nil
 }
 
-func CreateQueriesFromCollection(cx1client *Cx1ClientGo.Cx1Client, collection Cx1ClientGo.SASTQueryCollection, scan *Cx1ClientGo.Scan, delete bool) error {
+func CreateQueriesFromCollection(cx1client *Cx1ClientGo.Cx1Client, collection Cx1ClientGo.SASTQueryCollection, scan *Cx1ClientGo.Scan, create, delete bool) error {
 	logger.Infof("Fetching existing queries")
 	qc, err := cx1client.GetSASTQueryCollection()
 	if err != nil {
@@ -237,7 +234,8 @@ func CreateQueriesFromCollection(cx1client *Cx1ClientGo.Cx1Client, collection Cx
 		}
 	}()
 
-	if scan != nil {
+	sessionNeeded := create || delete
+	if sessionNeeded && scan != nil {
 		logger.Infof("Creating audit session for scan %v", scan.String())
 		session, err = cx1client.GetAuditSessionByID("sast", scan.ProjectID, scan.ScanID)
 		if err != nil {
@@ -252,7 +250,7 @@ func CreateQueriesFromCollection(cx1client *Cx1ClientGo.Cx1Client, collection Cx
 	}
 
 	for _, lang := range collection.QueryLanguages {
-		if !slices.Contains(session.Languages, lang.Name) {
+		if sessionNeeded && !slices.Contains(session.Languages, lang.Name) {
 			if scan == nil {
 				if session.ID != "" {
 					err = cx1client.DeleteAuditSession(&session)
@@ -282,48 +280,38 @@ func CreateQueriesFromCollection(cx1client *Cx1ClientGo.Cx1Client, collection Cx
 		}
 
 		logger.Infof("Processing queries for language %v", lang.Name)
-		CreateQueriesFromLanguage(cx1client, &session, qc, lang.QueryGroups, delete)
+		CreateQueriesFromLanguage(cx1client, &session, qc, lang.QueryGroups, create, delete)
 	}
 
 	return nil
 }
 
-func CreateQueriesFromLanguage(cx1client *Cx1ClientGo.Cx1Client, session *Cx1ClientGo.AuditSession, qc Cx1ClientGo.SASTQueryCollection, groups []Cx1ClientGo.SASTQueryGroup, delete bool) {
-	if delete {
-		for _, qg := range groups {
-			if qg.Name != "General" {
-				createQueriesFromGroup(cx1client, session, qg, qc, delete)
-			}
-		}
-		for _, qg := range groups {
-			if qg.Name == "General" {
-				createQueriesFromGroup(cx1client, session, qg, qc, delete)
-			}
-		}
-	} else {
-		for _, qg := range groups {
-			if qg.Name == "General" {
-				createQueriesFromGroup(cx1client, session, qg, qc, delete)
-			}
-		}
-		for _, qg := range groups {
-			if qg.Name != "General" {
-				createQueriesFromGroup(cx1client, session, qg, qc, delete)
-			}
+func CreateQueriesFromLanguage(cx1client *Cx1ClientGo.Cx1Client, session *Cx1ClientGo.AuditSession, qc Cx1ClientGo.SASTQueryCollection, groups []Cx1ClientGo.SASTQueryGroup, create, delete bool) {
+
+	for _, qg := range groups {
+		if qg.Name != "General" {
+			createQueriesFromGroup(cx1client, session, qg, qc, create, delete)
 		}
 	}
+	for _, qg := range groups {
+		if qg.Name == "General" {
+			createQueriesFromGroup(cx1client, session, qg, qc, create, delete)
+		}
+	}
+
 }
 
-func createQueriesFromGroup(cx1client *Cx1ClientGo.Cx1Client, session *Cx1ClientGo.AuditSession, qg Cx1ClientGo.SASTQueryGroup, qc Cx1ClientGo.SASTQueryCollection, delete bool) {
-	if delete {
-		for _, query := range qg.Queries {
-			existingQuery := qc.GetQueryByLevelAndName(query.Level, query.LevelID, query.Language, query.Group, query.Name)
-			err := cx1client.AuditSessionKeepAlive(session)
-			if err != nil {
-				logger.Errorf("Failed to keep audit session alive: %v", err)
-				return
-			}
-			if existingQuery != nil {
+func createQueriesFromGroup(cx1client *Cx1ClientGo.Cx1Client, session *Cx1ClientGo.AuditSession, qg Cx1ClientGo.SASTQueryGroup, qc Cx1ClientGo.SASTQueryCollection, create, delete bool) {
+	//check if the query exists and would need to be deleted
+	for _, query := range qg.Queries {
+		existingQuery := qc.GetQueryByLevelAndName(query.Level, query.LevelID, query.Language, query.Group, query.Name)
+		if existingQuery != nil {
+			if delete {
+				err := cx1client.AuditSessionKeepAlive(session)
+				if err != nil {
+					logger.Errorf("Failed to keep audit session alive: %v", err)
+					return
+				}
 				existingQuery, err := cx1client.GetAuditSASTQueryByKey(session, existingQuery.EditorKey)
 				if err != nil {
 					logger.Errorf("Failed to get existing query %v: %v", existingQuery.StringDetailed(), err)
@@ -336,54 +324,69 @@ func createQueriesFromGroup(cx1client *Cx1ClientGo.Cx1Client, session *Cx1Client
 					}
 				}
 			} else {
+				logger.Infof("Would delete query %s", query.StringDetailed())
+			}
+		} else {
+			if delete {
 				logger.Infof("Query %v does not exist", query.StringDetailed())
 			}
 		}
-	} else {
-		// Create the queries first - so that if an earlier query calls a later query, it won't fail since the later query doesn't exist yet
-		for _, query := range qg.Queries {
+	}
+
+	// Create the queries (empty) first - so that if an earlier query calls a later query, it won't fail because the later query doesn't exist yet
+	for _, query := range qg.Queries {
+		if create {
 			err := cx1client.AuditSessionKeepAlive(session)
 			if err != nil {
 				logger.Errorf("Failed to keep audit session alive: %v", err)
 				return
 			}
-			if qc.GetQueryByLevelAndName(query.Level, query.LevelID, query.Language, query.Group, query.Name) == nil {
-				baseQuery := qc.GetClosestQueryByLevelAndName(cx1client.QueryTypeTenant(), cx1client.QueryTypeTenant(), query.Language, query.Group, query.Name)
-				if baseQuery != nil {
-					logger.Infof("Closest existing query found is %v", baseQuery.StringDetailed())
-				} else {
-					logger.Infof("No existing query found for %v - will create new", query.StringDetailed())
-					var newCorpQuery Cx1ClientGo.SASTQuery
-					newCorpQuery = query
-					newCorpQuery.Source = "result = All.NewCxList();"
-
-					newCorpQuery, fails, err := cx1client.CreateNewSASTQuery(session, newCorpQuery)
-					if err != nil {
-						logger.Errorf("Failed to create query %v: %v", query.StringDetailed(), err)
-						if len(fails) > 0 {
-							for _, f := range fails {
-								logger.Errorf("  - %v", f)
-							}
-						}
-						continue
-					}
-					qc.AddQuery(newCorpQuery)
-					logger.Infof("Created new tenant query: %v", newCorpQuery.StringDetailed())
-					baseQuery = &newCorpQuery
-				}
-
-				if baseQuery.Level != query.Level {
-					newOverride, err := cx1client.CreateSASTQueryOverride(session, query.Level, baseQuery)
-					if err != nil {
-						logger.Errorf("Failed to create override for %v: %v", query.StringDetailed(), err)
-						continue
-					}
-					qc.AddQuery(newOverride)
-					logger.Infof("Created new override: %v", newOverride.StringDetailed())
-				}
-			}
 		}
 
+		if qc.GetQueryByLevelAndName(query.Level, query.LevelID, query.Language, query.Group, query.Name) == nil {
+			if !create {
+				logger.Infof("Would create a new %s-level query: %s - %s - %s", query.Level, query.Language, query.Group, query.Name)
+				continue
+			}
+			baseQuery := qc.GetClosestQueryByLevelAndName(cx1client.QueryTypeTenant(), cx1client.QueryTypeTenant(), query.Language, query.Group, query.Name)
+			if baseQuery != nil {
+				logger.Infof("Closest existing query found is %v", baseQuery.StringDetailed())
+			} else {
+				logger.Infof("No existing query found for %v - will create new", query.StringDetailed())
+				var newCorpQuery Cx1ClientGo.SASTQuery
+				newCorpQuery = query
+				newCorpQuery.Source = "result = All.NewCxList();"
+
+				newCorpQuery, fails, err := cx1client.CreateNewSASTQuery(session, newCorpQuery)
+				if err != nil {
+					logger.Errorf("Failed to create query %v: %v", query.StringDetailed(), err)
+					if len(fails) > 0 {
+						for _, f := range fails {
+							logger.Errorf("  - %v", f)
+						}
+					}
+					continue
+				}
+				qc.AddQuery(newCorpQuery)
+				logger.Infof("Created new tenant query: %v", newCorpQuery.StringDetailed())
+				baseQuery = &newCorpQuery
+			}
+
+			if baseQuery.Level != query.Level {
+				newOverride, err := cx1client.CreateSASTQueryOverride(session, query.Level, baseQuery)
+				if err != nil {
+					logger.Errorf("Failed to create override for %v: %v", query.StringDetailed(), err)
+					continue
+				}
+				qc.AddQuery(newOverride)
+				logger.Infof("Created new override: %v", newOverride.StringDetailed())
+			}
+		} else {
+			logger.Infof("Would update existing %s-level override %s - %s - %s", query.Level, query.Language, query.Group, query.Name)
+		}
+	}
+
+	if create {
 		for _, query := range qg.Queries {
 			existingQuery := qc.GetQueryByLevelAndName(query.Level, query.LevelID, query.Language, query.Group, query.Name)
 			err := cx1client.AuditSessionKeepAlive(session)
@@ -436,4 +439,5 @@ func createQueriesFromGroup(cx1client *Cx1ClientGo.Cx1Client, session *Cx1Client
 			logger.Infof("Final query state: %v", existingQuery.StringDetailed())
 		}
 	}
+
 }

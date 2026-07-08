@@ -23,6 +23,7 @@ func main() {
 	logger.SetOutput(os.Stdout)
 
 	DeleteGroups := flag.Bool("delete", false, "Toggle to delete all previously-created groups")
+	CreateGroups := flag.Bool("create", false, "Toggle to delete all previously-created groups")
 	NumberOfGroups := flag.Int("count", 100, "Number of groups to create")
 
 	logger.Info("Starting")
@@ -35,34 +36,40 @@ func main() {
 
 	logger.Infof("Connected with %v", cx1client.String())
 
-	if *DeleteGroups {
-		groups, err := cx1client.GetGroupsByName("testgroup-")
-		if err != nil {
-			logger.Fatalf("Failed to get groups: %s", err)
-		}
-		for _, g := range groups {
+	groups, err := cx1client.GetGroupsByName("testgroup-")
+	if err != nil {
+		logger.Fatalf("Failed to get groups: %s", err)
+	}
+	for _, g := range groups {
+		if *DeleteGroups {
 			err := cx1client.DeleteGroup(&g)
 			if err != nil {
 				logger.Errorf("Failed to delete group %v: %s", g.String(), err)
 			} else {
 				logger.Infof("Deleted group %v", g.String())
 			}
+		} else {
+			logger.Infof("Would delete group %s", g.String())
 		}
-	} else {
-		for i := 1; i <= *NumberOfGroups; i++ {
-			logger.Infof("Creating group batch %d", i)
-			err := createGroups(cx1client, i)
-			if err != nil {
-				logger.Errorf("Failed while creating group batch %d: %s", i, err)
-			}
+	}
+
+	for i := 1; i <= *NumberOfGroups; i++ {
+		logger.Infof("Creating group batch %d", i)
+		err := createGroups(cx1client, i, *CreateGroups, logger)
+		if err != nil {
+			logger.Errorf("Failed while creating group batch %d: %s", i, err)
 		}
 	}
 
 	logger.Infof("Done!")
 }
 
-func createGroups(cx1client *Cx1ClientGo.Cx1Client, id int) error {
+func createGroups(cx1client *Cx1ClientGo.Cx1Client, id int, create bool, logger *logrus.Logger) error {
 	groupName := fmt.Sprintf("testgroup-%04d", id)
+	if !create {
+		logger.Infof("Would create group: %s", groupName)
+		return nil
+	}
 	group, err := cx1client.CreateGroup(groupName)
 
 	if err != nil {
